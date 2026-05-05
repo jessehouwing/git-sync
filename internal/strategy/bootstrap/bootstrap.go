@@ -451,13 +451,28 @@ func executeBatched( //nolint:maintidx // complex batch logic is inherently bran
 					// Calibrate before subdividing. The new value carries
 					// over to the next iteration's pre-flight check, so a
 					// blob-heavy repo's sub-packs get caught earlier.
-					if updated := calibrateBytesPerObject(sentBytes, packObjectCount, calibratedBytesPerObject); updated > 0 {
+					//
+					// When we have an objectsSent observation from the
+					// streaming parser, divide by THAT rather than the
+					// full pack header count. sentBytes covers exactly
+					// objectsSent objects (the front of the pack), so
+					// sentBytes/objectsSent is the accurate per-object
+					// average for the portion we actually observed —
+					// and for blob-front-loaded repos that's a pessimistic
+					// upper bound, which is what we want for pre-flight.
+					calibrationDenom := packObjectCount
+					if objectsSent > 0 && objectsSent < calibrationDenom {
+						calibrationDenom = objectsSent
+					}
+					if updated := calibrateBytesPerObject(sentBytes, calibrationDenom, calibratedBytesPerObject); updated > 0 {
 						p.log("bootstrap batch calibrated bytes-per-object",
 							"branch", batch.Plan.TargetRef.String(),
 							"previous_bytes_per_object", calibratedBytesPerObject,
 							"observed_bytes_per_object", updated,
 							"sent_bytes", sentBytes,
-							"object_count", packObjectCount)
+							"calibration_denom", calibrationDenom,
+							"object_count", packObjectCount,
+							"objects_sent", objectsSent)
 						calibratedBytesPerObject = updated
 					}
 					// Refine the self-imposed budget from observation:
@@ -472,7 +487,22 @@ func executeBatched( //nolint:maintidx // complex batch logic is inherently bran
 							selfImposedBudget = sentBytes
 						}
 					}
-					factor := observedSubdivisionFactor(sentBytes, limit)
+					// Pick the byte count we use for sizing the next
+					// subdivision. When the server cut us off, sentBytes
+					// is roughly the cap and using it directly is right.
+					// When *we* cut the upload early, sentBytes is just
+					// the abort point (~minBytesBeforeAbort) — much less
+					// than the real pack size — so the factor would
+					// converge slowly. Project from observed bytes/object
+					// to the full pack size when we have the data, so
+					// factor reflects the real overshoot.
+					sizingBytes := sentBytes
+					if abortedEarly && objectsSent > 0 && totalObjects > 0 {
+						if projected := sentBytes * totalObjects / objectsSent; projected > sizingBytes {
+							sizingBytes = projected
+						}
+					}
+					factor := observedSubdivisionFactor(sizingBytes, limit)
 					expanded := subdivideToFactor(batch.chain, current, batch.Checkpoints[idx:], factor)
 					if len(expanded) > len(batch.Checkpoints[idx:]) {
 						oldRemaining := len(batch.Checkpoints[idx:])
@@ -482,6 +512,7 @@ func executeBatched( //nolint:maintidx // complex batch logic is inherently bran
 							"old_remaining", oldRemaining,
 							"new_remaining", newCount,
 							"sent_bytes", sentBytes,
+							"sizing_bytes", sizingBytes,
 							"limit_bytes", limit,
 							"factor", factor,
 							"aborted_early", abortedEarly,
