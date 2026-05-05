@@ -401,9 +401,11 @@ func executeBatched( //nolint:maintidx // complex batch logic is inherently bran
 				"calibrated_bytes_per_object", calibratedBytesPerObject)
 
 			cmds := convert.PlansToPushCommands(stagePlans)
-			counter := &packReadCounter{ReadCloser: packReader}
-			pushErr := p.TargetPusher.PushPack(ctx, cmds, counter)
-			sentBytes := counter.n
+			observer := newPackStreamObserver(packReader)
+			pushErr := p.TargetPusher.PushPack(ctx, cmds, observer)
+			sentBytes := observer.Bytes()
+			objectsSent := observer.ObjectsSent()
+			totalObjects := observer.TotalObjects()
 			if pushErr != nil {
 				_ = packReader.Close()
 				p.log("bootstrap batch push failed",
@@ -414,6 +416,8 @@ func executeBatched( //nolint:maintidx // complex batch logic is inherently bran
 					"target_limit_bytes", p.TargetMaxPack,
 					"sent_bytes", sentBytes,
 					"object_count", packObjectCount,
+					"objects_sent", objectsSent,
+					"total_objects_in_pack", totalObjects,
 					"will_subdivide", isTargetBodyLimitError(pushErr) && len(batch.chain) > 0,
 					"error", pushErr.Error())
 				if isTargetBodyLimitError(pushErr) && len(batch.chain) > 0 {
@@ -750,7 +754,7 @@ const estimatedBytesPerObject = 750
 // bytesPerObject lets the caller use a per-run calibrated value
 // instead of the static estimatedBytesPerObject default. Calibrating
 // after each rejection (using the bytes that flowed through
-// packReadCounter) catches blob-heavy repos where the static 750-byte
+// packStreamObserver) catches blob-heavy repos where the static 750-byte
 // average is 10–20× too low — without calibration the pre-flight
 // would let oversized sub-packs through and the loop would only learn
 // after another wasted ~limit-sized upload. The subdivide callback
@@ -834,25 +838,6 @@ func chainPosition(chain []plumbing.Hash, hash plumbing.Hash) int {
 		}
 	}
 	return -1
-}
-
-// packReadCounter wraps the pack stream handed to PushPack so the
-// bootstrap loop can learn how many bytes actually went up before a 413
-// from the target. Used to size the post-rejection subdivision based on
-// observed reality rather than blindly halving — for a repo whose pack
-// is 20× larger than the per-object heuristic predicted, halving five
-// times in a row (1 → 2 → 4 → 8 → 16 → 32) is the same number of source
-// re-fetches as one informed jump from 1 → 32.
-type packReadCounter struct {
-	io.ReadCloser
-
-	n int64
-}
-
-func (c *packReadCounter) Read(p []byte) (int, error) {
-	n, err := c.ReadCloser.Read(p)
-	c.n += int64(n)
-	return n, err //nolint:wrapcheck // Read must preserve io.EOF for io.Reader contract
 }
 
 // observedSubdivisionFactor estimates how many sub-packs a rejected

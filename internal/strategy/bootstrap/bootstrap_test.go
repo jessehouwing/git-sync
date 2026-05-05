@@ -638,19 +638,25 @@ func TestSubdivideToFactorReturnsInputWhenChainExhausted(t *testing.T) {
 	}
 }
 
-func TestPackReadCounterTracksBytes(t *testing.T) {
+func TestPackStreamObserverTracksBytes(t *testing.T) {
 	t.Parallel()
 	body := []byte("a packfile worth of bytes")
-	c := &packReadCounter{ReadCloser: io.NopCloser(bytes.NewReader(body))}
-	out, err := io.ReadAll(c)
+	o := newPackStreamObserver(io.NopCloser(bytes.NewReader(body)))
+	out, err := io.ReadAll(o)
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
 	if string(out) != string(body) {
-		t.Errorf("counter must not alter content: got %q", out)
+		t.Errorf("observer must not alter content: got %q", out)
 	}
-	if c.n != int64(len(body)) {
-		t.Errorf("counter.n = %d, want %d", c.n, len(body))
+	if o.Bytes() != int64(len(body)) {
+		t.Errorf("observer.Bytes() = %d, want %d", o.Bytes(), len(body))
+	}
+	// Cleanly drains the Scanner goroutine. Closing twice should be
+	// a no-op (the source is the closed io.NopCloser wrapping a
+	// bytes.Reader).
+	if err := o.Close(); err != nil {
+		t.Fatalf("close: %v", err)
 	}
 }
 
