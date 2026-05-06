@@ -68,6 +68,19 @@ type Params struct {
 	// "checkpoint" branches where each first-parent step drags in a
 	// large second-parent ancestry that would otherwise have to be
 	// pushed in one indivisible pack.
+	//
+	// Server requirement under "topo": successive checkpoints aren't
+	// always in an ancestor-descendant relationship (topological
+	// order can interleave parallel branches), so the internal
+	// refs/gitsync/bootstrap/heads/<branch> temp ref may receive
+	// non-fast-forward updates between checkpoints. The temp ref is
+	// purely internal scaffolding — user-visible refs (refs/heads,
+	// refs/tags) only receive a single fast-forward update at
+	// cutover — but targets that enforce receive.denyNonFastforwards
+	// across all refs (not just refs/heads) will reject these
+	// updates and fail the bootstrap. Major hosts (GitHub, GitLab,
+	// Bitbucket, Cloudflare) do not enable this by default; the
+	// constraint only matters on hardened/locked-down deployments.
 	Strategy string
 	// OnPhase, when non-nil, is called with a short human-readable label
 	// describing the current bootstrap activity (e.g. "pack 3/8") so a

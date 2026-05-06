@@ -47,6 +47,13 @@ type AdvancedOptions struct {
 
 // BootstrapStrategy values accepted by AdvancedOptions.BootstrapStrategy.
 // Empty is treated as the default (first-parent).
+//
+// BootstrapStrategyTopo additionally requires the target to allow
+// non-fast-forward updates under the refs/gitsync/ namespace, since
+// successive checkpoints under topological ordering aren't guaranteed
+// to be in an ancestor-descendant relationship and the internal temp
+// ref may receive non-ff updates between batches. Major hosts allow
+// this by default; only locked-down deployments need to be checked.
 const (
 	BootstrapStrategyFirstParent = "first-parent"
 	BootstrapStrategyTopo        = "topo"
