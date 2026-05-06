@@ -521,17 +521,17 @@ func TestShouldAbortPush(t *testing.T) {
 		{
 			// Header parsed, balanced pack, projection well under cap.
 			// 50 MiB sent for 25% of objects projects to 200 MiB total.
-			name:         "projection under threshold proceeds",
-			bytesSent:    50 * 1024 * 1024,
-			objectsSent:  25, totalObjects: 100,
+			name:        "projection under threshold proceeds",
+			bytesSent:   50 * 1024 * 1024,
+			objectsSent: 25, totalObjects: 100,
 			budget: cap500, want: false,
 		},
 		{
 			// Cloudflare-shaped front-loaded pack: 50 MiB sent and only
 			// 5% of objects done means projected ≈ 1 GiB > 95% of cap.
-			name:         "front-loaded projection trips abort",
-			bytesSent:    50 * 1024 * 1024,
-			objectsSent:  5, totalObjects: 100,
+			name:        "front-loaded projection trips abort",
+			bytesSent:   50 * 1024 * 1024,
+			objectsSent: 5, totalObjects: 100,
 			budget: cap500, want: true,
 		},
 		{
@@ -549,9 +549,9 @@ func TestShouldAbortPush(t *testing.T) {
 		{
 			// Late-stage projection: objectsSent has caught up with
 			// totalObjects so projection ≈ bytesSent. Must not flap.
-			name:         "near-end matched ratio projects to current bytes",
-			bytesSent:    450 * 1024 * 1024,
-			objectsSent:  98, totalObjects: 100,
+			name:        "near-end matched ratio projects to current bytes",
+			bytesSent:   450 * 1024 * 1024,
+			objectsSent: 98, totalObjects: 100,
 			budget: cap500, want: false,
 		},
 	}
