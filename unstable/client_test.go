@@ -47,6 +47,59 @@ func TestBuildSyncConfigCarriesAdvancedOptions(t *testing.T) {
 	}
 }
 
+func TestAdvancedOptionsValidate(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		opts    AdvancedOptions
+		wantErr bool
+	}{
+		{name: "empty strategy is the default", opts: AdvancedOptions{}, wantErr: false},
+		{name: "first-parent accepted", opts: AdvancedOptions{BootstrapStrategy: BootstrapStrategyFirstParent}, wantErr: false},
+		{name: "topo accepted", opts: AdvancedOptions{BootstrapStrategy: BootstrapStrategyTopo}, wantErr: false},
+		{name: "typo rejected at API edge", opts: AdvancedOptions{BootstrapStrategy: "topographic"}, wantErr: true},
+		{name: "case-sensitive: TOPO is not topo", opts: AdvancedOptions{BootstrapStrategy: "TOPO"}, wantErr: true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			err := c.opts.Validate()
+			if (err != nil) != c.wantErr {
+				t.Errorf("Validate() err=%v, wantErr=%v", err, c.wantErr)
+			}
+		})
+	}
+}
+
+func TestClientRejectsUnknownStrategyBeforeIO(t *testing.T) {
+	t.Parallel()
+	// The reviewer's concern: an invalid value should fail at the
+	// API edge, not silently slip through on a non-bootstrap path
+	// (e.g. Probe) where bootstrap planning never runs.
+	c := New(Options{HTTPClient: &http.Client{}})
+	bad := AdvancedOptions{BootstrapStrategy: "unsupported"}
+	if _, err := c.Probe(context.Background(), ProbeRequest{
+		Source:  gitsync.Endpoint{URL: "https://source.example/repo.git"},
+		Options: bad,
+	}); err == nil {
+		t.Errorf("Probe with invalid bootstrap strategy should error")
+	}
+	if _, err := c.Sync(context.Background(), SyncRequest{
+		Source:  gitsync.Endpoint{URL: "https://source.example/repo.git"},
+		Target:  gitsync.Endpoint{URL: "https://target.example/repo.git"},
+		Options: bad,
+	}); err == nil {
+		t.Errorf("Sync with invalid bootstrap strategy should error")
+	}
+	if _, err := c.Bootstrap(context.Background(), BootstrapRequest{
+		Source:  gitsync.Endpoint{URL: "https://source.example/repo.git"},
+		Target:  gitsync.Endpoint{URL: "https://target.example/repo.git"},
+		Options: bad,
+	}); err == nil {
+		t.Errorf("Bootstrap with invalid bootstrap strategy should error")
+	}
+}
+
 func TestBuildFetchConfigCopiesHaveHashesAtCallSite(t *testing.T) {
 	req := FetchRequest{
 		Source:     gitsync.Endpoint{URL: "https://source.example/repo.git"},
