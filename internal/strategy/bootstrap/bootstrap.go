@@ -579,6 +579,27 @@ func executeBatched( //nolint:maintidx // complex batch logic is inherently bran
 			current = checkpoint
 			pushedCheckpoints = append(pushedCheckpoints, checkpoint)
 			result.BatchCount++
+
+			// Recombine: subdivision is a one-way ratchet, so the fine
+			// granularity needed for one heavy commit sticks around for
+			// the rest of the chain even when the deltas afterward are
+			// tiny. Aim for the next pack to be roughly half the target
+			// limit by dropping enough checkpoints that the span doubles
+			// approximately log2(target/2 / sent) times. If we
+			// overshoot, the abort-early + subdivision path re-splits.
+			// Leave at least the final checkpoint after idx (it carries
+			// the SourceHash cutover), so the cap is len-idx-2.
+			if dropCount := recombineDropCount(sentBytes, p.TargetMaxPack, len(batch.Checkpoints)-idx-2); dropCount > 0 {
+				dropped := batch.Checkpoints[idx+1]
+				batch.Checkpoints = append(batch.Checkpoints[:idx+1], batch.Checkpoints[idx+1+dropCount:]...)
+				p.log("bootstrap batch recombining after small push",
+					"branch", batch.Plan.TargetRef.String(),
+					"sent_bytes", sentBytes,
+					"target_limit_bytes", p.TargetMaxPack,
+					"dropped_count", dropCount,
+					"first_dropped_checkpoint", planner.ShortHash(dropped),
+					"remaining_checkpoints", len(batch.Checkpoints))
+			}
 			idx++
 		}
 
@@ -961,6 +982,33 @@ func chainPosition(chain []plumbing.Hash, hash plumbing.Hash) int {
 		}
 	}
 	return -1
+}
+
+// recombineDropCount picks how many of the upcoming checkpoints to
+// drop after a small successful push. Each dropped checkpoint roughly
+// doubles the span of the next pack — so doubling sentBytes until
+// hitting target/2 gives the count. Capped by maxDrop (always leave
+// at least one checkpoint ahead, including the final one) and by a
+// hard ceiling that keeps any single overshoot's recovery cost
+// bounded. Returns 0 when sentBytes already used at least half the
+// limit, when we have no headroom to estimate, or when nothing can be
+// dropped.
+func recombineDropCount(sentBytes, targetLimit int64, maxDrop int) int {
+	const hardCap = 8
+	if sentBytes <= 0 || targetLimit <= 0 || maxDrop <= 0 {
+		return 0
+	}
+	target := targetLimit / 2
+	if sentBytes >= target {
+		return 0
+	}
+	count := 0
+	span := sentBytes
+	for span*2 <= target && count < maxDrop && count < hardCap {
+		span *= 2
+		count++
+	}
+	return count
 }
 
 // minBytesBeforeAbort is the floor below which the projection-based

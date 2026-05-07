@@ -853,6 +853,60 @@ func TestSubdivideToFactorReturnsInputWhenChainExhausted(t *testing.T) {
 	}
 }
 
+func TestRecombineDropCount(t *testing.T) {
+	t.Parallel()
+	const limit = 50_000_000
+	cases := []struct {
+		name      string
+		sentBytes int64
+		limit     int64
+		maxDrop   int
+		want      int
+	}{
+		{
+			// Pack used over half the limit: span already in the right
+			// ballpark, no recombination.
+			name: "above half target, no drop", sentBytes: 30_000_000, limit: limit, maxDrop: 100, want: 0,
+		},
+		{
+			// Just under half: one doubling overshoots, so no drop.
+			name: "just under half overshoots on double, no drop", sentBytes: 13_000_000, limit: limit, maxDrop: 100, want: 0,
+		},
+		{
+			// 1 MB pack out of 50 MB limit: aim for 25 MB. log2(25/1) ≈ 4.6 → 4 doublings.
+			name: "small pack ramps several doublings", sentBytes: 1_000_000, limit: limit, maxDrop: 100, want: 4,
+		},
+		{
+			// 6.2 KB pack (the case from the trace): aim for 25 MB.
+			// log2(25_000_000/6200) ≈ 11.97 → capped at hardCap=8.
+			name: "tiny pack hits hard cap", sentBytes: 6_200, limit: limit, maxDrop: 100, want: 8,
+		},
+		{
+			// Same tiny pack but only 3 checkpoints to drop: respect maxDrop.
+			name: "maxDrop limits drop count", sentBytes: 6_200, limit: limit, maxDrop: 3, want: 3,
+		},
+		{
+			name: "no headroom returns zero", sentBytes: 0, limit: limit, maxDrop: 100, want: 0,
+		},
+		{
+			name: "no limit returns zero", sentBytes: 1024, limit: 0, maxDrop: 100, want: 0,
+		},
+		{
+			name: "no slack returns zero", sentBytes: 1024, limit: limit, maxDrop: 0, want: 0,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			got := recombineDropCount(c.sentBytes, c.limit, c.maxDrop)
+			if got != c.want {
+				t.Errorf("recombineDropCount(%d, %d, %d) = %d, want %d",
+					c.sentBytes, c.limit, c.maxDrop, got, c.want)
+			}
+		})
+	}
+}
+
 func TestPackStreamObserverTracksBytes(t *testing.T) {
 	t.Parallel()
 	body := []byte("a packfile worth of bytes")
