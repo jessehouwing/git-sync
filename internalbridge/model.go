@@ -23,6 +23,7 @@ const (
 	ActionDelete Action = Action(planner.ActionDelete)
 	ActionSkip   Action = Action(planner.ActionSkip)
 	ActionBlock  Action = Action(planner.ActionBlock)
+	ActionWarn   Action = Action(planner.ActionWarn)
 )
 
 type RefResult struct {
@@ -95,6 +96,7 @@ type SyncCounts struct {
 	Skipped int `json:"skipped"`
 	Blocked int `json:"blocked"`
 	Deleted int `json:"deleted"`
+	Warned  int `json:"warned"`
 }
 
 type BatchSummary struct {
@@ -151,6 +153,7 @@ func FromSyncResult(result syncer.Result) SyncResult {
 			Skipped: result.Skipped,
 			Blocked: result.Blocked,
 			Deleted: result.Deleted,
+			Warned:  result.Warned,
 		},
 		Execution: ExecutionSummary{
 			DryRun:             result.DryRun,

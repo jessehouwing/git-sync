@@ -93,11 +93,18 @@ type RefScope struct {
 }
 
 // SyncPolicy controls high-level sync behavior.
+//
+// BestEffort, when true, downgrades per-ref rejections from the target's
+// receive-pack to warnings instead of failing the whole sync. Useful for
+// AllRefs mirroring into hosts that refuse writes to specific namespaces
+// (e.g. GitHub's refs/pull/* hidden refs). Pack-level failures (transport
+// errors, unpack errors) remain fatal.
 type SyncPolicy struct {
 	Mode        OperationMode `json:"mode"`
 	IncludeTags bool          `json:"includeTags"`
 	Force       bool          `json:"force"`
 	Prune       bool          `json:"prune"`
+	BestEffort  bool          `json:"bestEffort,omitempty"`
 	Protocol    ProtocolMode  `json:"protocol"`
 }
 
@@ -145,6 +152,7 @@ const (
 	ActionDelete Action = internalbridge.ActionDelete
 	ActionSkip   Action = internalbridge.ActionSkip
 	ActionBlock  Action = internalbridge.ActionBlock
+	ActionWarn   Action = internalbridge.ActionWarn
 )
 
 type RefResult = internalbridge.RefResult

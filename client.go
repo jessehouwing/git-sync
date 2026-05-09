@@ -230,6 +230,7 @@ func bridgePolicy(policy SyncPolicy) internalbridge.SyncPolicy {
 		IncludeTags: policy.IncludeTags,
 		Force:       policy.Force,
 		Prune:       policy.Prune,
+		BestEffort:  policy.BestEffort,
 		Protocol:    internalbridge.ProtocolMode(policy.Protocol),
 	}
 }

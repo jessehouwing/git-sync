@@ -50,6 +50,7 @@ type SyncPolicy struct {
 	IncludeTags bool
 	Force       bool
 	Prune       bool
+	BestEffort  bool
 	Protocol    ProtocolMode
 }
 
@@ -82,6 +83,7 @@ func SyncConfig(source Endpoint, sourceAuth EndpointAuth, target Endpoint, targe
 		Mode:                   operationModeString(policy.Mode),
 		Force:                  policy.Force,
 		Prune:                  policy.Prune,
+		BestEffort:             policy.BestEffort,
 		ProtocolMode:           protocolString(policy.Protocol),
 		MaterializedMaxObjects: syncer.DefaultMaterializedMaxObjects,
 	}}

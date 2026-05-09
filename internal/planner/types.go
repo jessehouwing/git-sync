@@ -32,6 +32,12 @@ const (
 	ActionDelete Action = "delete"
 	ActionSkip   Action = "skip"
 	ActionBlock  Action = "block"
+	// ActionWarn is set after a push when the target rejected an
+	// individual ref update under best-effort policy. The push itself
+	// succeeded for other refs; this ref carries the server's reason in
+	// BranchPlan.Reason. Used so AllRefs syncs into hostile targets
+	// (e.g. GitHub refs/pull/* hidden refs) don't fail the whole run.
+	ActionWarn Action = "warn"
 )
 
 // RefMapping is a user-specified source:target mapping.

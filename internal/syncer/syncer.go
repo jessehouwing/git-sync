@@ -80,6 +80,7 @@ type Config struct {
 	Mode                   string
 	Force                  bool
 	Prune                  bool
+	BestEffort             bool
 	MaxPackBytes           int64
 	TargetMaxPackBytes     int64
 	MaterializedMaxObjects int
@@ -107,6 +108,7 @@ const (
 	ActionDelete  = planner.ActionDelete
 	ActionSkip    = planner.ActionSkip
 	ActionBlock   = planner.ActionBlock
+	ActionWarn    = planner.ActionWarn
 )
 
 type RefInfo struct {
@@ -133,6 +135,7 @@ type Result struct {
 	Skipped            int          `json:"skipped"`
 	Blocked            int          `json:"blocked"`
 	Deleted            int          `json:"deleted"`
+	Warned             int          `json:"warned"`
 	DryRun             bool         `json:"dryRun"`
 	OperationMode      string       `json:"operationMode"`
 	Relay              bool         `json:"relay"`
@@ -154,8 +157,8 @@ func (r Result) Lines() []string {
 		lines = append(lines, planner.FormatPlanLine(plan))
 	}
 	summary := fmt.Sprintf(
-		"summary: pushed=%d deleted=%d skipped=%d blocked=%d mode=%s protocol=%s relay=%t relay-mode=%s relay-reason=%s batching=%t batch-count=%d planned-batches=%d",
-		r.Pushed, r.Deleted, r.Skipped, r.Blocked, r.OperationMode, r.Protocol, r.Relay, r.RelayMode, r.RelayReason, r.Batching, r.BatchCount, r.PlannedBatchCount,
+		"summary: pushed=%d deleted=%d skipped=%d blocked=%d warned=%d mode=%s protocol=%s relay=%t relay-mode=%s relay-reason=%s batching=%t batch-count=%d planned-batches=%d",
+		r.Pushed, r.Deleted, r.Skipped, r.Blocked, r.Warned, r.OperationMode, r.Protocol, r.Relay, r.RelayMode, r.RelayReason, r.Batching, r.BatchCount, r.PlannedBatchCount,
 	)
 	if r.DryRun {
 		summary += " dry-run=true"
@@ -382,6 +385,30 @@ func instrumentHTTPClient(base *http.Client, skipTLS bool, label string, stats *
 	return &clone
 }
 
+// applyRejections downgrades plans to ActionWarn when their target ref
+// appears in the session's collected rejections. Returns the number of
+// plans that were downgraded so callers can update Result counts.
+func (s *syncSession) applyRejections(plans []BranchPlan) int {
+	if len(s.rejections) == 0 {
+		return 0
+	}
+	warned := 0
+	for i := range plans {
+		status, ok := s.rejections[plans[i].TargetRef]
+		if !ok {
+			continue
+		}
+		plans[i].Action = ActionWarn
+		if status == "" {
+			plans[i].Reason = "target rejected ref update"
+		} else {
+			plans[i].Reason = "target rejected ref update: " + status
+		}
+		warned++
+	}
+	return warned
+}
+
 func planConfig(cfg Config) planner.PlanConfig {
 	return planner.PlanConfig{
 		Branches:    cfg.Branches,
@@ -441,6 +468,11 @@ type syncSession struct {
 	target          *targetSession
 	measurementDone func() Measurement
 	progress        *progressReporter
+	// rejections collects per-ref ng statuses reported by the target's
+	// receive-pack when BestEffort is set. The map is the closure backing
+	// the Pusher.OnRejection callback wired in newSession; consult it
+	// after a strategy returns to downgrade matching plans to ActionWarn.
+	rejections map[plumbing.ReferenceName]string
 }
 
 // finish releases any resources owned by the session — currently the live
@@ -552,6 +584,12 @@ func newSession(ctx context.Context, cfg Config, needTarget bool) (*syncSession,
 				NoThin:            targetFeatures.NoThin,
 			},
 			pusher: gitproto.NewPusher(targetConn, targetAdv, cfg.Verbose),
+		}
+		if cfg.BestEffort {
+			s.rejections = make(map[plumbing.ReferenceName]string)
+			s.target.pusher.OnRejection = func(name plumbing.ReferenceName, status string) {
+				s.rejections[name] = status
+			}
 		}
 	}
 
@@ -712,12 +750,21 @@ func (s *syncSession) runSync(ctx context.Context) (Result, error) {
 		}
 	}
 
+	if !s.cfg.DryRun {
+		warned := s.applyRejections(pushPlans)
+		if warned > 0 {
+			s.applyRejections(result.Plans)
+			result.Warned += warned
+		}
+	}
 	for _, plan := range pushPlans {
 		switch plan.Action {
 		case ActionCreate, ActionUpdate:
 			result.Pushed++
 		case ActionDelete:
 			result.Deleted++
+		case ActionWarn:
+			// already counted via result.Warned
 		case ActionSkip, ActionBlock:
 			// not applicable in this context
 		}
@@ -809,12 +856,21 @@ func (s *syncSession) runReplicate(ctx context.Context) (Result, error) {
 		result.RelayReason = repResult.RelayReason
 	}
 
+	if !s.cfg.DryRun {
+		warned := s.applyRejections(pushPlans)
+		if warned > 0 {
+			s.applyRejections(result.Plans)
+			result.Warned += warned
+		}
+	}
 	for _, plan := range pushPlans {
 		switch plan.Action {
 		case ActionCreate, ActionUpdate:
 			result.Pushed++
 		case ActionDelete:
 			result.Deleted++
+		case ActionWarn:
+			// already counted via result.Warned
 		case ActionSkip, ActionBlock:
 			// not applicable in this context
 		}
@@ -957,8 +1013,14 @@ func bootstrapWithInputs(
 	if err != nil {
 		return Result{}, fmt.Errorf("bootstrap execute: %w", err)
 	}
+	plans := bResult.Plans
+	warned := s.applyRejections(plans)
+	pushed := bResult.Pushed - warned
+	if pushed < 0 {
+		pushed = 0
+	}
 	return Result{
-		Plans: bResult.Plans, Pushed: bResult.Pushed, OperationMode: s.cfg.Mode,
+		Plans: plans, Pushed: pushed, Warned: warned, OperationMode: s.cfg.Mode,
 		Relay: bResult.Relay, RelayMode: bResult.RelayMode, RelayReason: bResult.RelayReason,
 		Batching: bResult.Batching, BatchCount: bResult.BatchCount,
 		PlannedBatchCount: bResult.PlannedBatchCount, TempRefs: bResult.TempRefs,

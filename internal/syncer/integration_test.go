@@ -2829,6 +2829,81 @@ func TestRun_IntegrationAllRefsBootstrapsCustomNamespace(t *testing.T) {
 	assertHeadsMatch(t, sourceRepo, targetRepo, testBranch)
 }
 
+// TestRun_IntegrationAllRefsBestEffortDowngradesNgToWarn verifies that with
+// BestEffort the per-ref ng status returned by the target receive-pack is
+// downgraded to ActionWarn instead of failing the whole sync — the mode that
+// makes AllRefs usable against hosts with hidden refs (GitHub refs/pull/*).
+func TestRun_IntegrationAllRefsBestEffortDowngradesNgToWarn(t *testing.T) {
+	sourceRepo, sourceFS := newSourceRepo(t)
+	makeCommits(t, sourceRepo, sourceFS, 2)
+
+	head, err := sourceRepo.Reference(plumbing.NewBranchReferenceName(testBranch), true)
+	if err != nil {
+		t.Fatalf("resolve source head: %v", err)
+	}
+	notesRef := plumbing.ReferenceName("refs/notes/commits")
+	if err := sourceRepo.Storer.SetReference(plumbing.NewHashReference(notesRef, head.Hash())); err != nil {
+		t.Fatalf("set source notes ref: %v", err)
+	}
+
+	targetRepo, err := git.Init(memory.NewStorage())
+	if err != nil {
+		t.Fatalf("init target repo: %v", err)
+	}
+
+	sourceServer := newSmartHTTPRepoServerV2(t, sourceRepo)
+	targetServer := newSmartHTTPRepoServer(t, targetRepo)
+	defer sourceServer.Close()
+	defer targetServer.Close()
+
+	// Reject the notes ref (mimicking GitHub's "deny updating a hidden ref")
+	// while accepting the branch ref. Pack itself unpacks fine.
+	targetServer.receivePackHook = func(req *packp.UpdateRequests, _ bool) *packp.ReportStatus {
+		report := packp.NewReportStatus()
+		report.UnpackStatus = "ok"
+		for _, cmd := range req.Commands {
+			status := "ok"
+			if cmd.Name == notesRef {
+				status = "deny updating a hidden ref"
+			}
+			report.CommandStatuses = append(report.CommandStatuses, &packp.CommandStatus{
+				ReferenceName: cmd.Name,
+				Status:        status,
+			})
+		}
+		return report
+	}
+
+	result, err := Run(context.Background(), Config{
+		Source:       Endpoint{URL: sourceServer.RepoURL()},
+		Target:       Endpoint{URL: targetServer.RepoURL()},
+		ProtocolMode: protocolModeV2,
+		AllRefs:      true,
+		BestEffort:   true,
+	})
+	if err != nil {
+		t.Fatalf("expected best-effort sync to succeed despite ng: %v", err)
+	}
+	if result.Warned != 1 {
+		t.Fatalf("expected Warned=1, got %d (result: %+v)", result.Warned, result)
+	}
+	var foundWarn bool
+	for _, plan := range result.Plans {
+		if plan.TargetRef == notesRef {
+			if plan.Action != ActionWarn {
+				t.Errorf("expected notes ref Action=warn, got %s", plan.Action)
+			}
+			if !strings.Contains(plan.Reason, "deny updating a hidden ref") {
+				t.Errorf("expected rejection reason in plan.Reason, got %q", plan.Reason)
+			}
+			foundWarn = true
+		}
+	}
+	if !foundWarn {
+		t.Fatal("expected to find the notes ref in result.Plans")
+	}
+}
+
 // TestRun_IntegrationAllRefsRejectsCustomMappingWithoutAllRefs locks in the
 // validation gate: mapping a non-branch/non-tag ref errors when AllRefs is
 // not set, so the strict default flow stays loud about unsupported refs.
