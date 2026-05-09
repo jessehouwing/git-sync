@@ -384,8 +384,8 @@ func TestBuildDesiredRefsAllRefs(t *testing.T) {
 	hashPull := plumbing.NewHash("4444444444444444444444444444444444444444")
 
 	sourceRefs := map[plumbing.ReferenceName]plumbing.Hash{
-		plumbing.NewBranchReferenceName("main"):     hashBranch,
-		plumbing.NewTagReferenceName("v1.0"):        hashTag,
+		plumbing.NewBranchReferenceName("main"):      hashBranch,
+		plumbing.NewTagReferenceName("v1.0"):         hashTag,
 		plumbing.ReferenceName("refs/notes/commits"): hashNotes,
 		plumbing.ReferenceName("refs/pull/1/head"):   hashPull,
 	}

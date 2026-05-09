@@ -2784,14 +2784,8 @@ func TestRun_IntegrationAllRefsBootstrapsCustomNamespace(t *testing.T) {
 	sourceRepo, sourceFS := newSourceRepo(t)
 	makeCommits(t, sourceRepo, sourceFS, 2)
 
-	head, err := sourceRepo.Reference(plumbing.NewBranchReferenceName(testBranch), true)
-	if err != nil {
-		t.Fatalf("resolve source head: %v", err)
-	}
 	notesRef := plumbing.ReferenceName("refs/notes/commits")
-	if err := sourceRepo.Storer.SetReference(plumbing.NewHashReference(notesRef, head.Hash())); err != nil {
-		t.Fatalf("set source notes ref: %v", err)
-	}
+	head := syncertest.SetRefAtBranch(t, sourceRepo, notesRef, testBranch)
 
 	targetRepo, err := git.Init(memory.NewStorage())
 	if err != nil {
@@ -2820,8 +2814,8 @@ func TestRun_IntegrationAllRefsBootstrapsCustomNamespace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected refs/notes/commits on target: %v", err)
 	}
-	if gotNotes.Hash() != head.Hash() {
-		t.Fatalf("target notes hash = %s, want %s", gotNotes.Hash(), head.Hash())
+	if gotNotes.Hash() != head {
+		t.Fatalf("target notes hash = %s, want %s", gotNotes.Hash(), head)
 	}
 	assertHeadsMatch(t, sourceRepo, targetRepo, testBranch)
 }
@@ -2832,14 +2826,8 @@ func TestRun_IntegrationAllRefsMaterializedPathIntoExistingTarget(t *testing.T) 
 	sourceRepo, sourceFS := newSourceRepo(t)
 	makeCommits(t, sourceRepo, sourceFS, 3)
 
-	head, err := sourceRepo.Reference(plumbing.NewBranchReferenceName(testBranch), true)
-	if err != nil {
-		t.Fatalf("resolve source head: %v", err)
-	}
 	notesRef := plumbing.ReferenceName("refs/notes/commits")
-	if err := sourceRepo.Storer.SetReference(plumbing.NewHashReference(notesRef, head.Hash())); err != nil {
-		t.Fatalf("set source notes ref: %v", err)
-	}
+	head := syncertest.SetRefAtBranch(t, sourceRepo, notesRef, testBranch)
 
 	targetRepo, err := git.Init(memory.NewStorage())
 	if err != nil {
@@ -2876,8 +2864,8 @@ func TestRun_IntegrationAllRefsMaterializedPathIntoExistingTarget(t *testing.T) 
 	if err != nil {
 		t.Fatalf("expected refs/notes/commits on target: %v", err)
 	}
-	if gotNotes.Hash() != head.Hash() {
-		t.Fatalf("target notes hash = %s, want %s", gotNotes.Hash(), head.Hash())
+	if gotNotes.Hash() != head {
+		t.Fatalf("target notes hash = %s, want %s", gotNotes.Hash(), head)
 	}
 }
 
@@ -2885,14 +2873,8 @@ func TestRun_IntegrationAllRefsBestEffortDowngradesNgToWarn(t *testing.T) {
 	sourceRepo, sourceFS := newSourceRepo(t)
 	makeCommits(t, sourceRepo, sourceFS, 2)
 
-	head, err := sourceRepo.Reference(plumbing.NewBranchReferenceName(testBranch), true)
-	if err != nil {
-		t.Fatalf("resolve source head: %v", err)
-	}
 	notesRef := plumbing.ReferenceName("refs/notes/commits")
-	if err := sourceRepo.Storer.SetReference(plumbing.NewHashReference(notesRef, head.Hash())); err != nil {
-		t.Fatalf("set source notes ref: %v", err)
-	}
+	syncertest.SetRefAtBranch(t, sourceRepo, notesRef, testBranch)
 
 	targetRepo, err := git.Init(memory.NewStorage())
 	if err != nil {
@@ -2904,22 +2886,8 @@ func TestRun_IntegrationAllRefsBestEffortDowngradesNgToWarn(t *testing.T) {
 	defer sourceServer.Close()
 	defer targetServer.Close()
 
-	// Reject the notes ref (mimicking GitHub's "deny updating a hidden ref")
-	// while accepting the branch ref. Pack itself unpacks fine.
 	targetServer.receivePackHook = func(req *packp.UpdateRequests, _ bool) *packp.ReportStatus {
-		report := packp.NewReportStatus()
-		report.UnpackStatus = "ok"
-		for _, cmd := range req.Commands {
-			status := "ok"
-			if cmd.Name == notesRef {
-				status = "deny updating a hidden ref"
-			}
-			report.CommandStatuses = append(report.CommandStatuses, &packp.CommandStatus{
-				ReferenceName: cmd.Name,
-				Status:        status,
-			})
-		}
-		return report
+		return syncertest.DenyRefsReport(req, "deny updating a hidden ref", notesRef)
 	}
 
 	result, err := Run(context.Background(), Config{
@@ -3008,14 +2976,8 @@ func TestBootstrap_IntegrationAllRefsBatchedTailPhase(t *testing.T) {
 	sourceRepo, sourceFS := newSourceRepo(t)
 	makeLargeCommits(t, sourceRepo, sourceFS, 5, 200_000)
 
-	head, err := sourceRepo.Reference(plumbing.NewBranchReferenceName(testBranch), true)
-	if err != nil {
-		t.Fatalf("resolve source head: %v", err)
-	}
 	notesRef := plumbing.ReferenceName("refs/notes/commits")
-	if err := sourceRepo.Storer.SetReference(plumbing.NewHashReference(notesRef, head.Hash())); err != nil {
-		t.Fatalf("set source notes ref: %v", err)
-	}
+	head := syncertest.SetRefAtBranch(t, sourceRepo, notesRef, testBranch)
 
 	targetRepo, err := git.Init(memory.NewStorage())
 	if err != nil {
@@ -3044,8 +3006,8 @@ func TestBootstrap_IntegrationAllRefsBatchedTailPhase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected refs/notes/commits on target after batched bootstrap: %v", err)
 	}
-	if gotNotes.Hash() != head.Hash() {
-		t.Fatalf("target notes hash = %s, want %s", gotNotes.Hash(), head.Hash())
+	if gotNotes.Hash() != head {
+		t.Fatalf("target notes hash = %s, want %s", gotNotes.Hash(), head)
 	}
 	assertHeadsMatch(t, sourceRepo, targetRepo, testBranch)
 }
@@ -3060,14 +3022,8 @@ func TestBootstrap_IntegrationAllRefsBatchedBestEffortDowngradesNg(t *testing.T)
 	sourceRepo, sourceFS := newSourceRepo(t)
 	makeLargeCommits(t, sourceRepo, sourceFS, 5, 200_000)
 
-	head, err := sourceRepo.Reference(plumbing.NewBranchReferenceName(testBranch), true)
-	if err != nil {
-		t.Fatalf("resolve source head: %v", err)
-	}
 	notesRef := plumbing.ReferenceName("refs/notes/commits")
-	if err := sourceRepo.Storer.SetReference(plumbing.NewHashReference(notesRef, head.Hash())); err != nil {
-		t.Fatalf("set source notes ref: %v", err)
-	}
+	syncertest.SetRefAtBranch(t, sourceRepo, notesRef, testBranch)
 
 	targetRepo, err := git.Init(memory.NewStorage())
 	if err != nil {
@@ -3093,19 +3049,7 @@ func TestBootstrap_IntegrationAllRefsBatchedBestEffortDowngradesNg(t *testing.T)
 		if !hasNotes {
 			return nil
 		}
-		report := packp.NewReportStatus()
-		report.UnpackStatus = "ok"
-		for _, cmd := range req.Commands {
-			status := "ok"
-			if cmd.Name == notesRef {
-				status = "deny updating a hidden ref"
-			}
-			report.CommandStatuses = append(report.CommandStatuses, &packp.CommandStatus{
-				ReferenceName: cmd.Name,
-				Status:        status,
-			})
-		}
-		return report
+		return syncertest.DenyRefsReport(req, "deny updating a hidden ref", notesRef)
 	}
 
 	result, err := Run(context.Background(), Config{
@@ -3150,14 +3094,8 @@ func TestBootstrap_IntegrationAllRefsBatchedBestEffortDowngradesNg(t *testing.T)
 func TestRun_IntegrationAllRefsSyncOtherKindUpdateRequiresForce(t *testing.T) {
 	sourceRepo, sourceFS := newSourceRepo(t)
 	makeCommits(t, sourceRepo, sourceFS, 1)
-	firstHead, err := sourceRepo.Reference(plumbing.NewBranchReferenceName(testBranch), true)
-	if err != nil {
-		t.Fatalf("resolve first head: %v", err)
-	}
 	notesRef := plumbing.ReferenceName("refs/notes/commits")
-	if err := sourceRepo.Storer.SetReference(plumbing.NewHashReference(notesRef, firstHead.Hash())); err != nil {
-		t.Fatalf("set source notes ref: %v", err)
-	}
+	syncertest.SetRefAtBranch(t, sourceRepo, notesRef, testBranch)
 
 	targetRepo, err := git.Init(memory.NewStorage())
 	if err != nil {
@@ -3377,14 +3315,8 @@ func TestRun_IntegrationAllRefsReplicateUpdatesOtherKindOnSecondRun(t *testing.T
 	sourceRepo, sourceFS := newSourceRepo(t)
 	makeCommits(t, sourceRepo, sourceFS, 2)
 
-	firstHead, err := sourceRepo.Reference(plumbing.NewBranchReferenceName(testBranch), true)
-	if err != nil {
-		t.Fatalf("resolve first source head: %v", err)
-	}
 	notesRef := plumbing.ReferenceName("refs/notes/commits")
-	if err := sourceRepo.Storer.SetReference(plumbing.NewHashReference(notesRef, firstHead.Hash())); err != nil {
-		t.Fatalf("set source notes ref: %v", err)
-	}
+	syncertest.SetRefAtBranch(t, sourceRepo, notesRef, testBranch)
 
 	targetRepo, err := git.Init(memory.NewStorage())
 	if err != nil {

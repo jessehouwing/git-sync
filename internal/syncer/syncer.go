@@ -395,15 +395,25 @@ func (s *syncSession) finalizeCounts(pushPlans []BranchPlan, result *Result) {
 			result.Warned += warned
 		}
 	}
-	for _, plan := range pushPlans {
+	pushed, deleted := tallyActions(pushPlans)
+	result.Pushed += pushed
+	result.Deleted += deleted
+}
+
+// tallyActions counts ref pushes and deletes from a classified plan slice.
+// ActionWarn/Skip/Block don't contribute; rejections are tracked separately
+// in Result.Warned via applyRejections.
+func tallyActions(plans []BranchPlan) (pushed, deleted int) {
+	for _, plan := range plans {
 		switch plan.Action {
 		case ActionCreate, ActionUpdate:
-			result.Pushed++
+			pushed++
 		case ActionDelete:
-			result.Deleted++
+			deleted++
 		case ActionWarn, ActionSkip, ActionBlock:
 		}
 	}
+	return pushed, deleted
 }
 
 // applyRejections downgrades plans whose ref was rejected by the target to
@@ -488,7 +498,7 @@ type syncSession struct {
 	target          *targetSession
 	measurementDone func() Measurement
 	progress        *progressReporter
-	// rejections is populated by Pusher.OnRejection when BestEffort is set.
+	// rejections records target ng statuses; nil unless BestEffort.
 	rejections map[plumbing.ReferenceName]string
 }
 
@@ -566,7 +576,7 @@ func newSession(ctx context.Context, cfg Config, needTarget bool) (*syncSession,
 	}
 	s.sourceConn.ProgressOut = &sessionStderr{s: s}
 
-	refPrefixes := planner.RefPrefixes(cfg.Mappings, cfg.IncludeTags, cfg.AllRefs)
+	refPrefixes := planner.RefPrefixes(planConfig(cfg))
 	sourceRefs, sourceService, err := gitproto.ListSourceRefs(ctx, s.sourceConn, cfg.ProtocolMode, refPrefixes)
 	if err != nil {
 		return nil, fmt.Errorf("list source refs: %w", err)
@@ -1003,15 +1013,7 @@ func bootstrapWithInputs(
 	}
 	plans := bResult.Plans
 	warned := s.applyRejections(plans)
-	// Recount Pushed from the rewritten plan slice (mirrors finalizeCounts)
-	// rather than subtracting from bResult.Pushed, so the relationship with
-	// applyRejections is explicit.
-	pushed := 0
-	for _, plan := range plans {
-		if plan.Action == ActionCreate || plan.Action == ActionUpdate {
-			pushed++
-		}
-	}
+	pushed, _ := tallyActions(plans)
 	return Result{
 		Plans: plans, Pushed: pushed, Warned: warned, OperationMode: s.cfg.Mode,
 		Relay: bResult.Relay, RelayMode: bResult.RelayMode, RelayReason: bResult.RelayReason,
@@ -1111,7 +1113,7 @@ func (s *syncSession) newProbeResult() ProbeResult {
 		SourceURL:     s.cfg.Source.URL,
 		RequestedMode: s.cfg.ProtocolMode,
 		Protocol:      s.sourceService.Protocol,
-		RefPrefixes:   planner.RefPrefixes(s.cfg.Mappings, s.cfg.IncludeTags, s.cfg.AllRefs),
+		RefPrefixes:   planner.RefPrefixes(planConfig(s.cfg)),
 		Capabilities:  s.sourceService.Capabilities(),
 		Refs:          refInfos,
 		Stats:         s.stats.snapshot(),

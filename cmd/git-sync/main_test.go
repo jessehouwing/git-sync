@@ -14,13 +14,14 @@ import (
 	"testing"
 	"time"
 
+	"entire.io/entire/git-sync/internal/syncertest"
 	"entire.io/entire/git-sync/unstable"
 	billy "github.com/go-git/go-billy/v6"
 	"github.com/go-git/go-billy/v6/memfs"
 	git "github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/plumbing"
-	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/format/pktline"
+	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp/sideband"
@@ -256,20 +257,13 @@ func TestRun_Replicate_SubcommandExecutesAgainstEmptyTarget(t *testing.T) {
 	}
 }
 
-// CLI smoke test for --all-refs: covers cobra flag parsing through the full
-// sync pipeline so wiring breaks fail at the cmd layer, not just integration.
+// Smoke test: cobra flag parsing through the full sync pipeline.
 func TestRun_Sync_AllRefsSmokeTest(t *testing.T) {
 	sourceRepo, sourceFS := newSourceRepo(t)
 	makeCommits(t, sourceRepo, sourceFS, 2)
 
-	head, err := sourceRepo.Reference(plumbing.NewBranchReferenceName(testBranch), true)
-	if err != nil {
-		t.Fatalf("resolve source head: %v", err)
-	}
 	notesRef := plumbing.ReferenceName("refs/notes/commits")
-	if err := sourceRepo.Storer.SetReference(plumbing.NewHashReference(notesRef, head.Hash())); err != nil {
-		t.Fatalf("set source notes ref: %v", err)
-	}
+	head := syncertest.SetRefAtBranch(t, sourceRepo, notesRef, testBranch)
 
 	targetRepo, err := git.Init(memory.NewStorage())
 	if err != nil {
@@ -327,13 +321,11 @@ func TestRun_Sync_AllRefsSmokeTest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected refs/notes/commits on target: %v", err)
 	}
-	if gotNotes.Hash() != head.Hash() {
-		t.Fatalf("target notes hash = %s, want %s", gotNotes.Hash(), head.Hash())
+	if gotNotes.Hash() != head {
+		t.Fatalf("target notes hash = %s, want %s", gotNotes.Hash(), head)
 	}
 }
 
-// fetch --all-refs must broaden discovery to tags and other-kind refs
-// without needing --tags, matching the AllRefs contract at the library level.
 func TestRun_Fetch_AllRefsCoversTagsAndOtherKind(t *testing.T) {
 	sourceRepo, sourceFS := newSourceRepo(t)
 	makeCommits(t, sourceRepo, sourceFS, 1)
@@ -391,9 +383,7 @@ func TestRun_Fetch_AllRefsCoversTagsAndOtherKind(t *testing.T) {
 	}
 }
 
-// replicate must keep strict failure semantics — its contract is "target
-// matches source" — so --all-refs must NOT bundle BestEffort the way it does
-// for sync. A target ng on any ref must surface as a non-nil error.
+// replicate's --all-refs must not bundle BestEffort the way sync's does.
 func TestRun_Replicate_AllRefsKeepsStrictFailureOnNg(t *testing.T) {
 	sourceRepo, sourceFS := newSourceRepo(t)
 	makeCommits(t, sourceRepo, sourceFS, 1)
@@ -409,15 +399,7 @@ func TestRun_Replicate_AllRefsKeepsStrictFailureOnNg(t *testing.T) {
 	defer targetServer.Close()
 
 	targetServer.receivePackHook = func(req *packp.UpdateRequests) *packp.ReportStatus {
-		report := packp.NewReportStatus()
-		report.UnpackStatus = "ok"
-		for _, cmd := range req.Commands {
-			report.CommandStatuses = append(report.CommandStatuses, &packp.CommandStatus{
-				ReferenceName: cmd.Name,
-				Status:        "deny updating a hidden ref",
-			})
-		}
-		return report
+		return syncertest.DenyRefsReport(req, "deny updating a hidden ref")
 	}
 
 	err = run(context.Background(), []string{
@@ -432,8 +414,8 @@ func TestRun_Replicate_AllRefsKeepsStrictFailureOnNg(t *testing.T) {
 	}
 }
 
-// Mirror of the above for sync: the same target rejection must turn into a
-// warning and a successful exit, so the CLI binding really differs by mode.
+// Mirror of the replicate test: same target rejection, warning + exit 0
+// for sync, so the CLI binding really differs by mode.
 func TestRun_Sync_AllRefsWarnsOnNg(t *testing.T) {
 	sourceRepo, sourceFS := newSourceRepo(t)
 	makeCommits(t, sourceRepo, sourceFS, 1)
@@ -449,15 +431,7 @@ func TestRun_Sync_AllRefsWarnsOnNg(t *testing.T) {
 	defer targetServer.Close()
 
 	targetServer.receivePackHook = func(req *packp.UpdateRequests) *packp.ReportStatus {
-		report := packp.NewReportStatus()
-		report.UnpackStatus = "ok"
-		for _, cmd := range req.Commands {
-			report.CommandStatuses = append(report.CommandStatuses, &packp.CommandStatus{
-				ReferenceName: cmd.Name,
-				Status:        "deny updating a hidden ref",
-			})
-		}
-		return report
+		return syncertest.DenyRefsReport(req, "deny updating a hidden ref")
 	}
 
 	output, err := captureStdout(func() error {
@@ -775,13 +749,17 @@ func (s *smartHTTPRepoServer) handleReceivePack(w http.ResponseWriter, r *http.R
 		var buf bytes.Buffer
 		var writer io.Writer = &buf
 		useSideband := false
-		switch {
-		case req.Capabilities.Supports(capability.Sideband64k):
-			writer = sideband.NewMuxer(sideband.Sideband64k, &buf)
-			useSideband = true
-		case req.Capabilities.Supports(capability.Sideband):
-			writer = sideband.NewMuxer(sideband.Sideband, &buf)
-			useSideband = true
+		// Mirrors the syncer test server's sideband-wrap: no-progress
+		// turns off the wrapping even if a sideband cap is advertised.
+		if !req.Capabilities.Supports(capability.NoProgress) {
+			switch {
+			case req.Capabilities.Supports(capability.Sideband64k):
+				writer = sideband.NewMuxer(sideband.Sideband64k, &buf)
+				useSideband = true
+			case req.Capabilities.Supports(capability.Sideband):
+				writer = sideband.NewMuxer(sideband.Sideband, &buf)
+				useSideband = true
+			}
 		}
 		if err := report.Encode(nopWriteCloser{writer}); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)

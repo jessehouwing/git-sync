@@ -152,16 +152,15 @@ func SelectBranches(source map[string]plumbing.Hash, requested []string) map[str
 	return selected
 }
 
-// RefPrefixes computes the ref-prefix arguments for v2 ls-refs based on
-// the user's configuration. When allRefs is true, the result collapses to
-// a single "refs/" prefix because every namespace is in scope.
-func RefPrefixes(mappings []RefMapping, includeTags, allRefs bool) []string {
-	if allRefs {
+// RefPrefixes computes the ref-prefix arguments for v2 ls-refs from cfg.
+// Under AllRefs the result collapses to a single "refs/" prefix.
+func RefPrefixes(cfg PlanConfig) []string {
+	if cfg.AllRefs {
 		return []string{"refs/"}
 	}
 	prefixSet := map[string]struct{}{}
-	if len(mappings) > 0 {
-		for _, m := range mappings {
+	if len(cfg.Mappings) > 0 {
+		for _, m := range cfg.Mappings {
 			src := strings.TrimSpace(m.Source)
 			switch {
 			case strings.HasPrefix(src, "refs/tags/"):
@@ -175,7 +174,7 @@ func RefPrefixes(mappings []RefMapping, includeTags, allRefs bool) []string {
 	} else {
 		prefixSet["refs/heads/"] = struct{}{}
 	}
-	if includeTags {
+	if cfg.IncludeTags {
 		prefixSet["refs/tags/"] = struct{}{}
 	}
 	prefixes := make([]string, 0, len(prefixSet))

@@ -80,28 +80,23 @@ func BuildDesiredRefs(
 		}
 	}
 
-	// AllRefs implies tag inclusion: the contract is "every refs/* on the
-	// source," so tags are part of the broadened scope by definition.
-	if cfg.IncludeTags || cfg.AllRefs {
+	// AllRefs implies tag inclusion. Both passes (tag, other-kind) walk
+	// sourceRefs once: under AllRefs+IncludeTags this saves a redundant
+	// iteration on repos with thousands of refs/changes/* or refs/notes/*.
+	wantTags := cfg.IncludeTags || cfg.AllRefs
+	if wantTags || cfg.AllRefs {
 		for refName, hash := range sourceRefs {
-			if !refName.IsTag() {
-				continue
-			}
-			if err := addManaged(refName, refName, RefKindTag, hash); err != nil {
-				return nil, nil, err
-			}
-		}
-	}
-
-	if cfg.AllRefs {
-		for refName, hash := range sourceRefs {
-			if RefKindFromName(refName) != RefKindOther {
+			kind := RefKindFromName(refName)
+			switch {
+			case kind == RefKindTag && wantTags:
+			case kind == RefKindOther && cfg.AllRefs:
+			default:
 				continue
 			}
 			if _, ok := desired[refName]; ok {
 				continue
 			}
-			if err := addManaged(refName, refName, RefKindOther, hash); err != nil {
+			if err := addManaged(refName, refName, kind, hash); err != nil {
 				return nil, nil, err
 			}
 		}
@@ -110,10 +105,8 @@ func BuildDesiredRefs(
 	return desired, managed, nil
 }
 
-// normalizeAllRefs clears the Branches filter when AllRefs is set so that
-// "all refs" really covers all branches — otherwise the desired-set and
-// prune predicates would honor a per-namespace allowlist for branches
-// while ignoring it for tags and other-kind refs.
+// normalizeAllRefs zeros Branches under AllRefs so the desired-set and
+// prune predicates agree on scope.
 func normalizeAllRefs(cfg PlanConfig) PlanConfig {
 	if cfg.AllRefs {
 		cfg.Branches = nil
@@ -238,10 +231,7 @@ func BuildReplicationPlans(
 }
 
 // addPruneCandidates registers unmanaged target refs as deletion candidates
-// when they fall in a namespace the user is currently mirroring. The branch
-// guard `len(cfg.Mappings) == 0 && len(cfg.Branches) == 0` keeps a narrow
-// branch-filter or mapping run from pruning branches outside its scope; tags
-// and other-kind only enter scope when their respective opt-in flag is set.
+// within the user's current scope. cfg is assumed normalized.
 func addPruneCandidates(managed map[plumbing.ReferenceName]ManagedTarget, targetRefs map[plumbing.ReferenceName]plumbing.Hash, cfg PlanConfig) {
 	for targetRef := range targetRefs {
 		if _, ok := managed[targetRef]; ok {

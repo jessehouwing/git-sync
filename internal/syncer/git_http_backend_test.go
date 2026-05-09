@@ -519,7 +519,7 @@ func TestBootstrap_GitHTTPBackendBatchedBranchResume(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create source transport: %v", err)
 	}
-	sourceRefs, sourceService, err := gitproto.ListSourceRefs(context.Background(), sourceConn, cfg.ProtocolMode, planner.RefPrefixes(cfg.Mappings, cfg.IncludeTags, cfg.AllRefs))
+	sourceRefs, sourceService, err := gitproto.ListSourceRefs(context.Background(), sourceConn, cfg.ProtocolMode, planner.RefPrefixes(planConfig(cfg)))
 	if err != nil {
 		t.Fatalf("list source refs: %v", err)
 	}
@@ -616,7 +616,7 @@ func TestBootstrap_GitHTTPBackendBatchedPlanningTracksBatchLimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create source transport: %v", err)
 	}
-	sourceRefs, sourceService, err := gitproto.ListSourceRefs(context.Background(), sourceConn, cfg.ProtocolMode, planner.RefPrefixes(cfg.Mappings, cfg.IncludeTags, cfg.AllRefs))
+	sourceRefs, sourceService, err := gitproto.ListSourceRefs(context.Background(), sourceConn, cfg.ProtocolMode, planner.RefPrefixes(planConfig(cfg)))
 	if err != nil {
 		t.Fatalf("list source refs: %v", err)
 	}

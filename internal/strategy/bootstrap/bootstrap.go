@@ -659,8 +659,7 @@ func executeBatched( //nolint:maintidx // complex batch logic is inherently bran
 	return result, nil
 }
 
-// tailPhaseLabel picks a phase label that doesn't lie when --all-refs runs
-// without any tags in scope.
+// tailPhaseLabel returns a phase label matching what's in plans.
 func tailPhaseLabel(plans []planner.BranchPlan) string {
 	hasTag, hasOther := false, false
 	for _, plan := range plans {
