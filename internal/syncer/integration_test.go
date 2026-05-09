@@ -3050,6 +3050,54 @@ func TestBootstrap_IntegrationAllRefsBatchedTailPhase(t *testing.T) {
 	assertHeadsMatch(t, sourceRepo, targetRepo, testBranch)
 }
 
+// Pure-prune replicate runs (no source-side updates) must actually delete
+// the orphaned ref. The runReplicate gate previously required at least one
+// relay plan, so delete-only scenarios silently no-op'd; this pins the
+// broader gate (any push plan triggers executeReplicate) for the non-
+// AllRefs branch case too.
+func TestRun_IntegrationReplicatePruneDeleteOnlyRunsExecutor(t *testing.T) {
+	sourceRepo, sourceFS := newSourceRepo(t)
+	makeCommits(t, sourceRepo, sourceFS, 1)
+
+	targetRepo, err := git.Init(memory.NewStorage())
+	if err != nil {
+		t.Fatalf("init target repo: %v", err)
+	}
+	if err := copyRefsAndObjects(sourceRepo.Storer, targetRepo.Storer, []plumbing.ReferenceName{plumbing.NewBranchReferenceName(testBranch)}); err != nil {
+		t.Fatalf("copy target baseline: %v", err)
+	}
+	staleHead, err := sourceRepo.Reference(plumbing.NewBranchReferenceName(testBranch), true)
+	if err != nil {
+		t.Fatalf("resolve source head: %v", err)
+	}
+	orphanRef := plumbing.NewBranchReferenceName("stale-branch")
+	if err := targetRepo.Storer.SetReference(plumbing.NewHashReference(orphanRef, staleHead.Hash())); err != nil {
+		t.Fatalf("set orphan branch: %v", err)
+	}
+
+	sourceServer := newSmartHTTPRepoServerV2(t, sourceRepo)
+	targetServer := newSmartHTTPRepoServer(t, targetRepo)
+	defer sourceServer.Close()
+	defer targetServer.Close()
+
+	result, err := Run(context.Background(), Config{
+		Source:       Endpoint{URL: sourceServer.RepoURL()},
+		Target:       Endpoint{URL: targetServer.RepoURL()},
+		ProtocolMode: protocolModeAuto,
+		Mode:         modeReplicate,
+		Prune:        true,
+	})
+	if err != nil {
+		t.Fatalf("delete-only replicate --prune failed: %v", err)
+	}
+	if result.Deleted != 1 {
+		t.Fatalf("expected Deleted=1, got %+v", result)
+	}
+	if _, err := targetRepo.Reference(orphanRef, true); !errors.Is(err, plumbing.ErrReferenceNotFound) {
+		t.Fatalf("expected orphan branch to be pruned, got err=%v", err)
+	}
+}
+
 // Replicate's bootstrap shortcut must not fire when --prune --all-refs has
 // stale other-kind refs to delete on target; otherwise replicate would
 // claim "target matches source" while leaving orphaned refs/notes/* behind.

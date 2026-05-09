@@ -622,7 +622,7 @@ func executeBatched( //nolint:maintidx // complex batch logic is inherently bran
 	if len(tailPlans) > 0 {
 		p.log("bootstrap batch pushing tail refs after branch batches", "tail_count", len(tailPlans))
 		if p.OnPhase != nil {
-			p.OnPhase("pushing tags")
+			p.OnPhase(tailPhaseLabel(tailPlans))
 		}
 		tailTargetRefs := planner.CopyRefHashMap(p.TargetRefs)
 		for _, batch := range batches {
@@ -654,6 +654,28 @@ func executeBatched( //nolint:maintidx // complex batch logic is inherently bran
 	result.Batching = true
 	result.RelayMode = "bootstrap-batch"
 	return result, nil
+}
+
+// tailPhaseLabel picks a phase label that doesn't lie when --all-refs runs
+// without any tags in scope.
+func tailPhaseLabel(plans []planner.BranchPlan) string {
+	hasTag, hasOther := false, false
+	for _, plan := range plans {
+		switch plan.Kind {
+		case planner.RefKindTag:
+			hasTag = true
+		case planner.RefKindOther:
+			hasOther = true
+		}
+	}
+	switch {
+	case hasTag && hasOther:
+		return "pushing tags and other refs"
+	case hasOther:
+		return "pushing other refs"
+	default:
+		return "pushing tags"
+	}
 }
 
 // --- Checkpoint planning ---

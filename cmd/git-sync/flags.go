@@ -55,6 +55,9 @@ const (
 // allRefsFlag registers --all-refs with the supplied usage string and
 // bundles its implications. Each pointer in implies is set to true when
 // --all-refs is set, via a PreRunE hook that fires after flag parsing.
+//
+// Not idempotent: calling twice on the same command stacks two PreRunE
+// hooks on the same flag pointer. Call once per command.
 func allRefsFlag(cmd *cobra.Command, usage string, allRefs *bool, implies ...*bool) {
 	cmd.Flags().BoolVar(allRefs, "all-refs", false, usage)
 	if len(implies) == 0 {

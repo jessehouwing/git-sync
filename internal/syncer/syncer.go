@@ -1000,8 +1000,17 @@ func bootstrapWithInputs(
 	}
 	plans := bResult.Plans
 	warned := s.applyRejections(plans)
+	// Recount Pushed from the rewritten plan slice (mirrors finalizeCounts)
+	// rather than subtracting from bResult.Pushed, so the relationship with
+	// applyRejections is explicit.
+	pushed := 0
+	for _, plan := range plans {
+		if plan.Action == ActionCreate || plan.Action == ActionUpdate {
+			pushed++
+		}
+	}
 	return Result{
-		Plans: plans, Pushed: bResult.Pushed - warned, Warned: warned, OperationMode: s.cfg.Mode,
+		Plans: plans, Pushed: pushed, Warned: warned, OperationMode: s.cfg.Mode,
 		Relay: bResult.Relay, RelayMode: bResult.RelayMode, RelayReason: bResult.RelayReason,
 		Batching: bResult.Batching, BatchCount: bResult.BatchCount,
 		PlannedBatchCount: bResult.PlannedBatchCount, TempRefs: bResult.TempRefs,
