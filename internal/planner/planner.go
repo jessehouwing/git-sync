@@ -18,6 +18,12 @@ type PlanConfig struct {
 	IncludeTags bool
 	Force       bool
 	Prune       bool
+	// AllRefs broadens the desired set to every refs/* on the source
+	// (notes, pulls, replace, custom namespaces) in addition to whatever
+	// branches/tags the existing flags select. Mappings can rename refs
+	// in any namespace when AllRefs is set; otherwise only refs/heads/
+	// and refs/tags/ are accepted.
+	AllRefs bool
 }
 
 // BuildDesiredRefs constructs the set of desired refs and managed targets from
@@ -52,7 +58,7 @@ func BuildDesiredRefs(
 
 	if len(cfg.Mappings) > 0 {
 		// Validate all mappings up front (issue #2, #3)
-		normalized, err := validation.ValidateMappings(cfg.Mappings)
+		normalized, err := validation.ValidateMappings(cfg.Mappings, cfg.AllRefs)
 		if err != nil {
 			return nil, nil, fmt.Errorf("validate ref mappings: %w", err)
 		}
@@ -84,6 +90,20 @@ func BuildDesiredRefs(
 		}
 	}
 
+	if cfg.AllRefs {
+		for refName, hash := range sourceRefs {
+			if RefKindFromName(refName) != RefKindOther {
+				continue
+			}
+			if _, ok := desired[refName]; ok {
+				continue
+			}
+			if err := addManaged(refName, refName, RefKindOther, hash); err != nil {
+				return nil, nil, err
+			}
+		}
+	}
+
 	return desired, managed, nil
 }
 
@@ -105,6 +125,8 @@ func BuildPlans(
 				managed[targetRef] = ManagedTarget{Kind: RefKindTag, Label: targetRef.Short()}
 			case targetRef.IsBranch() && len(cfg.Mappings) == 0 && len(cfg.Branches) == 0:
 				managed[targetRef] = ManagedTarget{Kind: RefKindBranch, Label: targetRef.Short()}
+			case cfg.AllRefs && RefKindFromName(targetRef) == RefKindOther && len(cfg.Mappings) == 0:
+				managed[targetRef] = ManagedTarget{Kind: RefKindOther, Label: targetRef.Short()}
 			}
 		}
 	}
@@ -182,6 +204,8 @@ func BuildReplicationPlans(
 				managed[targetRef] = ManagedTarget{Kind: RefKindTag, Label: targetRef.Short()}
 			case targetRef.IsBranch() && len(cfg.Mappings) == 0 && len(cfg.Branches) == 0:
 				managed[targetRef] = ManagedTarget{Kind: RefKindBranch, Label: targetRef.Short()}
+			case cfg.AllRefs && RefKindFromName(targetRef) == RefKindOther && len(cfg.Mappings) == 0:
+				managed[targetRef] = ManagedTarget{Kind: RefKindOther, Label: targetRef.Short()}
 			}
 		}
 	}

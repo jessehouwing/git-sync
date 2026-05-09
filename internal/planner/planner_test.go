@@ -163,7 +163,7 @@ func TestValidateMappingsRejectsDuplicateTargets(t *testing.T) {
 	_, err := validation.ValidateMappings([]RefMapping{
 		{Source: "main", Target: "stable"},
 		{Source: "release", Target: "stable"},
-	})
+	}, false)
 	if err == nil {
 		t.Fatalf("expected error for duplicate target")
 	}
@@ -172,7 +172,7 @@ func TestValidateMappingsRejectsDuplicateTargets(t *testing.T) {
 func TestValidateMappingsRejectsCrossKind(t *testing.T) {
 	_, err := validation.ValidateMappings([]RefMapping{
 		{Source: "refs/heads/main", Target: "refs/tags/main"},
-	})
+	}, false)
 	if err == nil {
 		t.Fatalf("expected error for cross-kind mapping")
 	}
@@ -181,7 +181,7 @@ func TestValidateMappingsRejectsCrossKind(t *testing.T) {
 func TestValidateMappingsRejectsMixedQualification(t *testing.T) {
 	_, err := validation.ValidateMappings([]RefMapping{
 		{Source: "refs/heads/main", Target: "stable"},
-	})
+	}, false)
 	if err == nil {
 		t.Fatalf("expected error for mixed qualification")
 	}
@@ -375,6 +375,67 @@ func TestBuildDesiredRefsAllBranches(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestBuildDesiredRefsAllRefs(t *testing.T) {
+	hashBranch := plumbing.NewHash("1111111111111111111111111111111111111111")
+	hashTag := plumbing.NewHash("2222222222222222222222222222222222222222")
+	hashNotes := plumbing.NewHash("3333333333333333333333333333333333333333")
+	hashPull := plumbing.NewHash("4444444444444444444444444444444444444444")
+
+	sourceRefs := map[plumbing.ReferenceName]plumbing.Hash{
+		plumbing.NewBranchReferenceName("main"):     hashBranch,
+		plumbing.NewTagReferenceName("v1.0"):        hashTag,
+		plumbing.ReferenceName("refs/notes/commits"): hashNotes,
+		plumbing.ReferenceName("refs/pull/1/head"):   hashPull,
+	}
+
+	t.Run("AllRefs adds non-branch non-tag refs", func(t *testing.T) {
+		desired, _, err := BuildDesiredRefs(sourceRefs, PlanConfig{AllRefs: true})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		// Branches still come in; tags need IncludeTags; "other" comes from AllRefs.
+		if _, ok := desired[plumbing.ReferenceName("refs/notes/commits")]; !ok {
+			t.Error("expected refs/notes/commits in desired set")
+		}
+		if _, ok := desired[plumbing.ReferenceName("refs/pull/1/head")]; !ok {
+			t.Error("expected refs/pull/1/head in desired set")
+		}
+		if _, ok := desired[plumbing.NewTagReferenceName("v1.0")]; ok {
+			t.Error("tag should not appear without IncludeTags")
+		}
+		if _, ok := desired[plumbing.NewBranchReferenceName("main")]; !ok {
+			t.Error("branch should still appear with default selection")
+		}
+	})
+
+	t.Run("Other-kind mapping accepted under AllRefs", func(t *testing.T) {
+		desired, _, err := BuildDesiredRefs(sourceRefs, PlanConfig{
+			Mappings: []RefMapping{{Source: "refs/notes/commits", Target: "refs/notes/mirror"}},
+			AllRefs:  true,
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		want := plumbing.ReferenceName("refs/notes/mirror")
+		got, ok := desired[want]
+		if !ok {
+			t.Fatalf("expected %s in desired set", want)
+		}
+		if got.Kind != RefKindOther {
+			t.Errorf("expected RefKindOther, got %s", got.Kind)
+		}
+	})
+
+	t.Run("Other-kind mapping rejected without AllRefs", func(t *testing.T) {
+		_, _, err := BuildDesiredRefs(sourceRefs, PlanConfig{
+			Mappings: []RefMapping{{Source: "refs/notes/commits", Target: "refs/notes/mirror"}},
+		})
+		if err == nil {
+			t.Fatal("expected error mapping refs/notes/* without AllRefs")
+		}
+	})
 }
 
 func TestBuildPlansDelete(t *testing.T) {
@@ -935,7 +996,7 @@ func TestFirstParentChainStoppingAtNilBehaviourMatchesPlain(t *testing.T) {
 }
 
 func TestValidateMappingsEmpty(t *testing.T) {
-	result, err := validation.ValidateMappings(nil)
+	result, err := validation.ValidateMappings(nil, false)
 	if err != nil {
 		t.Fatalf("expected nil error for empty mappings, got %v", err)
 	}
@@ -947,7 +1008,7 @@ func TestValidateMappingsEmpty(t *testing.T) {
 func TestValidateMappingsValidBranch(t *testing.T) {
 	normalized, err := validation.ValidateMappings([]RefMapping{
 		{Source: "main", Target: "stable"},
-	})
+	}, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -966,7 +1027,7 @@ func TestValidateMappingsValidBranch(t *testing.T) {
 func TestValidateMappingsValidFullRef(t *testing.T) {
 	normalized, err := validation.ValidateMappings([]RefMapping{
 		{Source: "refs/heads/main", Target: "refs/heads/upstream-main"},
-	})
+	}, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

@@ -12,6 +12,7 @@ type RefKind string
 const (
 	RefKindBranch RefKind = RefKind(planner.RefKindBranch)
 	RefKindTag    RefKind = RefKind(planner.RefKindTag)
+	RefKindOther  RefKind = RefKind(planner.RefKindOther)
 )
 
 type Action string

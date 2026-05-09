@@ -79,9 +79,17 @@ type RefMapping struct {
 }
 
 // RefScope constrains which refs a request manages.
+//
+// AllRefs broadens the scope to every refs/* on the source (notes, pulls,
+// replace, custom namespaces) in addition to whatever Branches and the
+// SyncPolicy.IncludeTags flag select. Mappings can also rename refs in any
+// namespace when AllRefs is set; otherwise only refs/heads/ and refs/tags/
+// mappings are accepted. AllRefs handles ref scope only — failure semantics
+// are governed separately by SyncPolicy.
 type RefScope struct {
 	Branches []string     `json:"branches"`
 	Mappings []RefMapping `json:"mappings"`
+	AllRefs  bool         `json:"allRefs,omitempty"`
 }
 
 // SyncPolicy controls high-level sync behavior.
@@ -98,6 +106,7 @@ type ProbeRequest struct {
 	Source       Endpoint     `json:"source"`
 	Target       *Endpoint    `json:"target"`
 	IncludeTags  bool         `json:"includeTags"`
+	AllRefs      bool         `json:"allRefs,omitempty"`
 	Protocol     ProtocolMode `json:"protocol"`
 	CollectStats bool         `json:"collectStats"`
 }
@@ -125,6 +134,7 @@ type RefKind = internalbridge.RefKind
 const (
 	RefKindBranch RefKind = internalbridge.RefKindBranch
 	RefKindTag    RefKind = internalbridge.RefKindTag
+	RefKindOther  RefKind = internalbridge.RefKindOther
 )
 
 type Action = internalbridge.Action

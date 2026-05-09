@@ -10,12 +10,17 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 )
 
-// RefKind distinguishes branch refs from tag refs.
+// RefKind distinguishes ref namespaces. Branch and tag refs have specific
+// semantics (fast-forward checks, retarget rules); RefKindOther covers any
+// other refs/* namespace (notes, pulls, replace, custom) the user opts into
+// via the AllRefs scope. Other refs follow the same fast-forward / force
+// semantics as branches but can live in arbitrary ref namespaces.
 type RefKind string
 
 const (
 	RefKindBranch RefKind = "branch"
 	RefKindTag    RefKind = "tag"
+	RefKindOther  RefKind = "other"
 )
 
 // Action represents the planned operation on a ref.
@@ -99,12 +104,16 @@ func ShortHash(hash plumbing.Hash) string {
 }
 
 // RefKindFromName infers the ref kind from a fully qualified ref name.
+// Returns RefKindOther for any refs/* outside refs/heads/ and refs/tags/,
+// and "" for names that don't start with refs/ at all.
 func RefKindFromName(name plumbing.ReferenceName) RefKind {
 	switch {
 	case name.IsBranch():
 		return RefKindBranch
 	case name.IsTag():
 		return RefKindTag
+	case strings.HasPrefix(name.String(), "refs/"):
+		return RefKindOther
 	default:
 		return ""
 	}
@@ -145,8 +154,12 @@ func SelectBranches(source map[string]plumbing.Hash, requested []string) map[str
 }
 
 // RefPrefixes computes the ref-prefix arguments for v2 ls-refs based on
-// the user's configuration.
-func RefPrefixes(mappings []RefMapping, includeTags bool) []string {
+// the user's configuration. When allRefs is true, the result collapses to
+// a single "refs/" prefix because every namespace is in scope.
+func RefPrefixes(mappings []RefMapping, includeTags, allRefs bool) []string {
+	if allRefs {
+		return []string{"refs/"}
+	}
 	prefixSet := map[string]struct{}{}
 	if len(mappings) > 0 {
 		for _, m := range mappings {

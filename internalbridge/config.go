@@ -42,6 +42,7 @@ type EndpointAuth struct {
 type RefScope struct {
 	Branches []string
 	Mappings []RefMapping
+	AllRefs  bool
 }
 
 type SyncPolicy struct {
@@ -52,11 +53,12 @@ type SyncPolicy struct {
 	Protocol    ProtocolMode
 }
 
-func ProbeConfig(source Endpoint, sourceAuth EndpointAuth, target *Endpoint, targetAuth EndpointAuth, protocol ProtocolMode, includeTags, collectStats bool, httpClient *http.Client) Config {
+func ProbeConfig(source Endpoint, sourceAuth EndpointAuth, target *Endpoint, targetAuth EndpointAuth, protocol ProtocolMode, includeTags, allRefs, collectStats bool, httpClient *http.Client) Config {
 	cfg := syncer.Config{
 		Source:       ToSyncerEndpoint(source, sourceAuth),
 		HTTPClient:   httpClient,
 		IncludeTags:  includeTags,
+		AllRefs:      allRefs,
 		ShowStats:    collectStats,
 		ProtocolMode: protocolString(protocol),
 	}
@@ -73,6 +75,7 @@ func SyncConfig(source Endpoint, sourceAuth EndpointAuth, target Endpoint, targe
 		HTTPClient:             httpClient,
 		Branches:               append([]string(nil), scope.Branches...),
 		Mappings:               ToValidationMappings(scope.Mappings),
+		AllRefs:                scope.AllRefs,
 		IncludeTags:            policy.IncludeTags,
 		DryRun:                 dryRun,
 		ShowStats:              collectStats,

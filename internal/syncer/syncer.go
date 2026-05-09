@@ -70,6 +70,7 @@ type Config struct {
 	HTTPClient             *http.Client
 	Branches               []string
 	Mappings               []RefMapping
+	AllRefs                bool
 	IncludeTags            bool
 	DryRun                 bool
 	Verbose                bool
@@ -100,6 +101,7 @@ type (
 const (
 	RefKindBranch = planner.RefKindBranch
 	RefKindTag    = planner.RefKindTag
+	RefKindOther  = planner.RefKindOther
 	ActionCreate  = planner.ActionCreate
 	ActionUpdate  = planner.ActionUpdate
 	ActionDelete  = planner.ActionDelete
@@ -385,6 +387,7 @@ func planConfig(cfg Config) planner.PlanConfig {
 		Branches:    cfg.Branches,
 		Mappings:    cfg.Mappings,
 		IncludeTags: cfg.IncludeTags,
+		AllRefs:     cfg.AllRefs,
 		Force:       cfg.Force,
 		Prune:       cfg.Prune,
 	}
@@ -485,7 +488,7 @@ func newSession(ctx context.Context, cfg Config, needTarget bool) (*syncSession,
 	default:
 		return nil, fmt.Errorf("unsupported operation mode %q", cfg.Mode)
 	}
-	if _, err := validation.ValidateMappings(cfg.Mappings); err != nil {
+	if _, err := validation.ValidateMappings(cfg.Mappings, cfg.AllRefs); err != nil {
 		return nil, fmt.Errorf("validate mappings: %w", err)
 	}
 	if cfg.Mode == modeReplicate && cfg.Force {
@@ -514,7 +517,7 @@ func newSession(ctx context.Context, cfg Config, needTarget bool) (*syncSession,
 	}
 	s.sourceConn.ProgressOut = &sessionStderr{s: s}
 
-	refPrefixes := planner.RefPrefixes(cfg.Mappings, cfg.IncludeTags)
+	refPrefixes := planner.RefPrefixes(cfg.Mappings, cfg.IncludeTags, cfg.AllRefs)
 	sourceRefs, sourceService, err := gitproto.ListSourceRefs(ctx, s.sourceConn, cfg.ProtocolMode, refPrefixes)
 	if err != nil {
 		return nil, fmt.Errorf("list source refs: %w", err)
@@ -1053,7 +1056,7 @@ func (s *syncSession) newProbeResult() ProbeResult {
 		SourceURL:     s.cfg.Source.URL,
 		RequestedMode: s.cfg.ProtocolMode,
 		Protocol:      s.sourceService.Protocol,
-		RefPrefixes:   planner.RefPrefixes(s.cfg.Mappings, s.cfg.IncludeTags),
+		RefPrefixes:   planner.RefPrefixes(s.cfg.Mappings, s.cfg.IncludeTags, s.cfg.AllRefs),
 		Capabilities:  s.sourceService.Capabilities(),
 		Refs:          refInfos,
 		Stats:         s.stats.snapshot(),

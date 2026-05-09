@@ -103,6 +103,7 @@ func (c *Client) buildProbeConfig(ctx context.Context, req ProbeRequest) (intern
 		targetAuth,
 		internalbridge.ProtocolMode(req.Protocol),
 		req.IncludeTags,
+		req.AllRefs,
 		req.CollectStats,
 		c.httpClient,
 	), nil
@@ -154,7 +155,7 @@ func (r SyncRequest) Validate() error {
 	if _, err := validation.NormalizeProtocolMode(string(r.Policy.Protocol)); err != nil {
 		return fmt.Errorf("normalize protocol: %w", err)
 	}
-	if _, err := validation.ValidateMappings(validationMappings(r.Scope.Mappings)); err != nil {
+	if _, err := validation.ValidateMappings(validationMappings(r.Scope.Mappings), r.Scope.AllRefs); err != nil {
 		return fmt.Errorf("validate mappings: %w", err)
 	}
 	return nil
@@ -173,7 +174,7 @@ func (r PlanRequest) Validate() error {
 	if _, err := validation.NormalizeProtocolMode(string(r.Policy.Protocol)); err != nil {
 		return fmt.Errorf("normalize protocol: %w", err)
 	}
-	if _, err := validation.ValidateMappings(validationMappings(r.Scope.Mappings)); err != nil {
+	if _, err := validation.ValidateMappings(validationMappings(r.Scope.Mappings), r.Scope.AllRefs); err != nil {
 		return fmt.Errorf("validate mappings: %w", err)
 	}
 	return nil
@@ -219,6 +220,7 @@ func bridgeScope(scope RefScope) internalbridge.RefScope {
 	return internalbridge.RefScope{
 		Branches: append([]string(nil), scope.Branches...),
 		Mappings: mappings,
+		AllRefs:  scope.AllRefs,
 	}
 }
 
