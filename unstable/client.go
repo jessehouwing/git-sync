@@ -78,6 +78,7 @@ type ProbeRequest struct {
 	Source      gitsync.Endpoint
 	Target      *gitsync.Endpoint
 	IncludeTags bool
+	AllRefs     bool
 	Protocol    gitsync.ProtocolMode
 	Options     AdvancedOptions
 }
@@ -96,6 +97,7 @@ type BootstrapRequest struct {
 	Target      gitsync.Endpoint
 	Scope       gitsync.RefScope
 	IncludeTags bool
+	BestEffort  bool
 	Protocol    gitsync.ProtocolMode
 	Options     AdvancedOptions
 }
@@ -216,6 +218,7 @@ func (c *Client) buildProbeConfig(ctx context.Context, req ProbeRequest) (syncer
 		Source:        source,
 		HTTPClient:    c.httpClient,
 		IncludeTags:   req.IncludeTags,
+		AllRefs:       req.AllRefs,
 		ShowStats:     req.Options.CollectStats,
 		MeasureMemory: req.Options.MeasureMemory,
 		Progress:      req.Options.Progress,
@@ -260,6 +263,7 @@ func (c *Client) buildSyncConfig(ctx context.Context, req SyncRequest) (syncer.C
 		Mode:                   operationModeString(req.Policy.Mode),
 		Force:                  req.Policy.Force,
 		Prune:                  req.Policy.Prune,
+		BestEffort:             req.Policy.BestEffort,
 		MaxPackBytes:           req.Options.MaxPackBytes,
 		TargetMaxPackBytes:     req.Options.TargetMaxPackBytes,
 		MaterializedMaxObjects: maxObjects,
@@ -286,6 +290,7 @@ func (c *Client) buildBootstrapConfig(ctx context.Context, req BootstrapRequest)
 		Mappings:           validationMappings(req.Scope.Mappings),
 		AllRefs:            req.Scope.AllRefs,
 		IncludeTags:        req.IncludeTags,
+		BestEffort:         req.BestEffort,
 		ShowStats:          req.Options.CollectStats,
 		MeasureMemory:      req.Options.MeasureMemory,
 		Progress:           req.Options.Progress,

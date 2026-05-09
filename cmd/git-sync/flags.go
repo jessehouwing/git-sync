@@ -46,6 +46,16 @@ func addProtocolFlag(cmd *cobra.Command, mode *protocolModeFlag) {
 	cmd.Flags().Var(mode, "protocol", "protocol mode: auto, v1, or v2")
 }
 
+// allRefsFlag registers --all-refs. The CLI semantic is "mirror everything
+// from source on a best-effort basis" — callers must propagate AllRefs to
+// BestEffort inside RunE after flag parsing (cobra has no on-set hook), so
+// per-ref rejections become warnings on top of the broader scope.
+func allRefsFlag(cmd *cobra.Command, allRefs *bool) {
+	cmd.Flags().BoolVar(allRefs, "all-refs", false,
+		"mirror every refs/* on the source (notes, pulls, custom namespaces) on a best-effort basis; "+
+			"per-ref server rejections become warnings rather than failing the sync")
+}
+
 func newProtocolFlag() protocolModeFlag {
 	return protocolModeFlag(protocolMode(envOr("GITSYNC_PROTOCOL", validation.ProtocolAuto)))
 }

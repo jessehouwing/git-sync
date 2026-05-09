@@ -155,6 +155,28 @@ git-sync sync \
   <target-url>
 ```
 
+Mirror every ref namespace (notes, pulls, custom) on a best-effort basis:
+
+```bash
+git-sync sync \
+  --all-refs \
+  <source-url> \
+  <target-url>
+```
+
+`--all-refs` broadens the source ref discovery from `refs/heads/`+`refs/tags/`
+to every `refs/*` namespace and lets ref mappings target arbitrary
+namespaces (`refs/notes/*`, `refs/pull/*`, custom refs). It also turns on
+best-effort failure handling: when the target's `receive-pack` rejects an
+individual ref (e.g. GitHub refusing writes to `refs/pull/*` hidden refs),
+the rejected ref appears in the result with `action=warn` and the server's
+reason instead of failing the whole sync. Pack-level transport or unpack
+failures remain fatal.
+
+Library callers can decouple the two halves: `RefScope.AllRefs` controls
+scope alone, and `SyncPolicy.BestEffort` controls failure handling. The
+CLI bundles them under `--all-refs` for convenience.
+
 Force source-side protocol v2:
 
 ```bash
@@ -172,7 +194,7 @@ The JSON interface is stable:
 
 - keys use `camelCase`
 - refs and hashes are serialized as strings, not raw byte arrays
-- top-level keys include `plans`, `pushed`, `skipped`, `blocked`, `deleted`, `dryRun`, `protocol`, and `stats`, plus `relay`, `relayMode`, `relayReason`, `batching`, `batchCount`, `plannedBatchCount`, and `tempRefs`
+- top-level keys include `plans`, `pushed`, `skipped`, `blocked`, `deleted`, `warned`, `dryRun`, `protocol`, and `stats`, plus `relay`, `relayMode`, `relayReason`, `batching`, `batchCount`, `plannedBatchCount`, and `tempRefs`
 - each item in `plans` includes stable string fields such as `branch`, `sourceRef`, `targetRef`, `sourceHash`, `targetHash`, `kind`, `action`, and `reason`
 
 ## Auth
