@@ -372,7 +372,7 @@ func TestRun_Fetch_AllRefsCoversTagsAndOtherKind(t *testing.T) {
 		if !ok {
 			continue
 		}
-		if name, _ := entry["name"].(string); name != "" {
+		if name, ok := entry["name"].(string); ok && name != "" {
 			seen[name] = true
 		}
 	}
@@ -451,7 +451,7 @@ func TestRun_Sync_AllRefsWarnsOnNg(t *testing.T) {
 	if err := json.Unmarshal([]byte(output), &result); err != nil {
 		t.Fatalf("decode sync json: %v\noutput=%s", err, output)
 	}
-	if got, _ := result["warned"].(float64); got == 0 {
+	if got, ok := result["warned"].(float64); !ok || got == 0 {
 		t.Fatalf("expected warned > 0 in result, got %#v", result["warned"])
 	}
 }

@@ -38,6 +38,7 @@ const (
 	testBranch                   = "master"
 	reasonEmptyTargetManagedRefs = "empty-target-managed-refs"
 	relayModeIncremental         = "incremental"
+	relayModeBootstrap           = "bootstrap"
 	relayModeBootstrapBatch      = "bootstrap-batch"
 )
 
@@ -3296,7 +3297,7 @@ func TestRun_IntegrationReplicateAllRefsPruneSkipsBootstrapForStaleOtherRef(t *t
 	if err != nil {
 		t.Fatalf("replicate --all-refs --prune failed: %v", err)
 	}
-	if result.RelayMode == "bootstrap" {
+	if result.RelayMode == relayModeBootstrap {
 		t.Fatalf("expected replicate to take prune path, not bootstrap; got RelayMode=%q", result.RelayMode)
 	}
 	if _, err := targetRepo.Reference(staleNotes, true); err == nil {

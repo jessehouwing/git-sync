@@ -97,7 +97,7 @@ func CanIncrementalRelay(force, prune, dryRun bool, plans []BranchPlan, target R
 				if !plan.TargetHash.IsZero() {
 					return false, "incremental-branch-create-target-not-empty"
 				}
-			case ActionDelete, ActionSkip, ActionBlock:
+			case ActionDelete, ActionSkip, ActionBlock, ActionWarn:
 				return false, "incremental-branch-action-not-update-or-create"
 			}
 		case RefKindTag:
@@ -107,7 +107,7 @@ func CanIncrementalRelay(force, prune, dryRun bool, plans []BranchPlan, target R
 			if plan.Action != ActionCreate {
 				return false, "incremental-tag-action-not-create"
 			}
-		default:
+		case RefKindOther:
 			return false, "incremental-unsupported-ref-kind"
 		}
 	}

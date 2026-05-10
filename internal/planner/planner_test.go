@@ -365,6 +365,7 @@ func TestBuildDesiredRefsAllBranches(t *testing.T) {
 					branchCount++
 				case RefKindTag:
 					tagCount++
+				case RefKindOther:
 				}
 			}
 			if branchCount != tt.wantBranchCount {

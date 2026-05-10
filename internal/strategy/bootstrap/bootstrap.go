@@ -668,6 +668,7 @@ func tailPhaseLabel(plans []planner.BranchPlan) string {
 			hasTag = true
 		case planner.RefKindOther:
 			hasOther = true
+		case planner.RefKindBranch:
 		}
 	}
 	switch {

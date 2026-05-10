@@ -744,6 +744,8 @@ func (s *syncSession) runSync(ctx context.Context) (Result, error) {
 			result.Skipped++
 		case ActionBlock:
 			result.Blocked++
+		case ActionWarn:
+			// not produced by planning; only set after a push by applyRejections.
 		}
 	}
 
@@ -848,6 +850,8 @@ func (s *syncSession) runReplicate(ctx context.Context) (Result, error) {
 			result.Skipped++
 		case ActionBlock:
 			result.Blocked++
+		case ActionWarn:
+			// not produced by planning; only set after a push by applyRejections.
 		}
 	}
 

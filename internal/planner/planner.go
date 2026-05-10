@@ -375,9 +375,7 @@ func PlanReplicationRef(want DesiredRef, targetHash plumbing.Hash, existsOnTarge
 	switch want.Kind {
 	case RefKindTag:
 		plan.Reason = ShortHash(targetHash) + " -> " + ShortHash(want.SourceHash) + " (replicate tag overwrite)"
-	case RefKindBranch:
-		plan.Reason = ShortHash(targetHash) + " -> " + ShortHash(want.SourceHash) + " (replicate overwrite)"
-	default:
+	case RefKindBranch, RefKindOther:
 		plan.Reason = ShortHash(targetHash) + " -> " + ShortHash(want.SourceHash) + " (replicate overwrite)"
 	}
 	return plan
