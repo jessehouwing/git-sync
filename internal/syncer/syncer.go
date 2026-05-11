@@ -1114,6 +1114,9 @@ func (s *syncSession) buildHaveRefMap(haveRefs []string, haveHashes []plumbing.H
 func (s *syncSession) newProbeResult() ProbeResult {
 	refInfos := make([]RefInfo, 0, len(s.sourceRefMap))
 	for name, hash := range s.sourceRefMap {
+		if planner.IsRefExcluded(name, s.cfg.ExcludeRefPrefixes) {
+			continue
+		}
 		refInfos = append(refInfos, RefInfo{Name: name.String(), Hash: hash})
 	}
 	sort.Slice(refInfos, func(i, j int) bool { return refInfos[i].Name < refInfos[j].Name })

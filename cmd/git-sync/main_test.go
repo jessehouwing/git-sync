@@ -326,6 +326,63 @@ func TestRun_Sync_AllRefsSmokeTest(t *testing.T) {
 	}
 }
 
+// probe --exclude-ref-prefix must filter the returned ref list — otherwise
+// the CLI knob is wired but ineffective for previewing scoped state.
+func TestRun_Probe_ExcludeRefPrefixFiltersReturnedRefs(t *testing.T) {
+	sourceRepo, sourceFS := newSourceRepo(t)
+	makeCommits(t, sourceRepo, sourceFS, 1)
+
+	notesRef := plumbing.ReferenceName("refs/notes/commits")
+	syncertest.SetRefAtBranch(t, sourceRepo, notesRef, testBranch)
+	pullRef := plumbing.ReferenceName("refs/pull/1/head")
+	syncertest.SetRefAtBranch(t, sourceRepo, pullRef, testBranch)
+
+	sourceServer := newSmartHTTPRepoServer(t, sourceRepo)
+	defer sourceServer.Close()
+
+	output, err := captureStdout(func() error {
+		return run(context.Background(), []string{
+			"probe",
+			"--all-refs",
+			"--exclude-ref-prefix", "refs/pull/",
+			"--json",
+			sourceServer.RepoURL(),
+		})
+	})
+	if err != nil {
+		t.Fatalf("run probe: %v\noutput=%s", err, output)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		t.Fatalf("decode probe json: %v\noutput=%s", err, output)
+	}
+	refs, ok := result["refs"].([]any)
+	if !ok {
+		t.Fatalf("expected refs array, got %#v", result["refs"])
+	}
+	var sawNotes bool
+	for _, raw := range refs {
+		entry, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		name, ok := entry["name"].(string)
+		if !ok {
+			continue
+		}
+		if name == string(pullRef) {
+			t.Fatalf("expected %s excluded from probe output, but it appeared", pullRef)
+		}
+		if name == string(notesRef) {
+			sawNotes = true
+		}
+	}
+	if !sawNotes {
+		t.Fatalf("expected %s in probe output", notesRef)
+	}
+}
+
 // CLI smoke test for --exclude-ref-prefix under --all-refs: refs/pull/* on
 // the source is trimmed, refs/notes/commits is kept.
 func TestRun_Sync_ExcludeRefPrefixTrimsPullRefs(t *testing.T) {
