@@ -2781,6 +2781,56 @@ func TestRun_IntegrationAddHistoricalAnnotatedTagAfterInitialBranchSync_NoThinTa
 	}
 }
 
+// Sync surfaces the source's symref HEAD target on Result, parsed from the
+// upload-pack advertisement we already make. Used by callers to know the
+// source's default branch without out-of-band metadata.
+func TestRun_IntegrationSyncSurfacesSourceHEAD(t *testing.T) {
+	sourceRepo, sourceFS := newSourceRepo(t)
+	makeCommits(t, sourceRepo, sourceFS, 1)
+
+	targetRepo, err := git.Init(memory.NewStorage())
+	if err != nil {
+		t.Fatalf("init target repo: %v", err)
+	}
+
+	sourceServer := newSmartHTTPRepoServerV2(t, sourceRepo)
+	targetServer := newSmartHTTPRepoServer(t, targetRepo)
+	defer sourceServer.Close()
+	defer targetServer.Close()
+
+	result, err := Run(context.Background(), Config{
+		Source:       Endpoint{URL: sourceServer.RepoURL()},
+		Target:       Endpoint{URL: targetServer.RepoURL()},
+		ProtocolMode: protocolModeAuto,
+	})
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	if got, want := result.SourceHEAD, plumbing.NewBranchReferenceName(testBranch); got != want {
+		t.Errorf("SourceHEAD = %q, want %q", got, want)
+	}
+}
+
+// Probe surfaces the source's symref HEAD target without performing a sync.
+func TestProbe_IntegrationSurfacesSourceHEAD(t *testing.T) {
+	sourceRepo, sourceFS := newSourceRepo(t)
+	makeCommits(t, sourceRepo, sourceFS, 1)
+
+	sourceServer := newSmartHTTPRepoServerV2(t, sourceRepo)
+	defer sourceServer.Close()
+
+	result, err := Probe(context.Background(), Config{
+		Source:       Endpoint{URL: sourceServer.RepoURL()},
+		ProtocolMode: protocolModeAuto,
+	})
+	if err != nil {
+		t.Fatalf("probe: %v", err)
+	}
+	if got, want := result.SourceHEAD, plumbing.NewBranchReferenceName(testBranch); got != want {
+		t.Errorf("SourceHEAD = %q, want %q", got, want)
+	}
+}
+
 func TestRun_IntegrationAllRefsBootstrapsCustomNamespace(t *testing.T) {
 	sourceRepo, sourceFS := newSourceRepo(t)
 	makeCommits(t, sourceRepo, sourceFS, 2)
