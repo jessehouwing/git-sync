@@ -38,16 +38,18 @@ func TestApplyRejectionsDowngradesAndCarriesReason(t *testing.T) {
 func TestLeaseFailureErrorEscalatesPastBestEffort(t *testing.T) {
 	main := plumbing.NewBranchReferenceName("main")
 	pull := plumbing.ReferenceName("refs/pull/1/head")
+	leased := Config{ForceWithLease: true}
 
 	// Non-lease rejection alone: BestEffort handles it as a warning, no fatal.
-	s := &syncSession{rejections: map[plumbing.ReferenceName]string{
+	s := &syncSession{cfg: leased, rejections: map[plumbing.ReferenceName]string{
 		pull: "deny updating a hidden ref",
 	}}
 	if err := s.leaseFailureError(); err != nil {
 		t.Fatalf("expected nil for non-lease rejection, got %v", err)
 	}
 
-	// Lease rejection: must escalate, naming the affected ref and the override flag.
+	// Lease rejection under --force-with-lease: must escalate, naming the
+	// affected ref and the override flag.
 	s.rejections[main] = "stale info, exp 1234, got abcd"
 	err := s.leaseFailureError()
 	if err == nil {
@@ -58,6 +60,22 @@ func TestLeaseFailureErrorEscalatesPastBestEffort(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "--force-blind") {
 		t.Errorf("expected migration hint in error, got %q", err)
+	}
+}
+
+func TestLeaseFailureErrorOnlyAppliesUnderForceWithLease(t *testing.T) {
+	main := plumbing.NewBranchReferenceName("main")
+	// The broad markers (non-fast-forward / fetch first) can mean ordinary
+	// server policy rejection rather than a lease miss. Those rejections must
+	// stay warnable under BestEffort when --force-with-lease isn't set.
+	rejections := map[plumbing.ReferenceName]string{
+		main: "non-fast-forward",
+	}
+	for _, cfg := range []Config{{}, {ForceBlind: true}} {
+		s := &syncSession{cfg: cfg, rejections: rejections}
+		if err := s.leaseFailureError(); err != nil {
+			t.Errorf("cfg=%+v: expected nil (no lease contract), got %v", cfg, err)
+		}
 	}
 }
 

@@ -430,7 +430,17 @@ func tallyActions(plans []BranchPlan) (pushed, deleted int) {
 // when BestEffort would otherwise downgrade them. Without this, a sync with
 // both --force-with-lease and --all-refs (which implies BestEffort) would
 // silently treat a concurrent target update as a warning, defeating the lease.
+//
+// Scoped to --force-with-lease only. The lease-failure marker set in gitproto
+// is intentionally broad to cover phrasing across servers (stale info / fetch
+// first / non-fast-forward / does not match), but under --force-blind or
+// non-force runs those same messages can mean ordinary policy rejection rather
+// than a stale lease, which BestEffort is allowed to downgrade. The contract
+// is only made when the user explicitly opts in.
 func (s *syncSession) leaseFailureError() error {
+	if !s.cfg.ForceWithLease {
+		return nil
+	}
 	if len(s.rejections) == 0 {
 		return nil
 	}
