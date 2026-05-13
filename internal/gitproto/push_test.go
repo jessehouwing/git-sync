@@ -3,6 +3,7 @@ package gitproto
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -378,4 +379,41 @@ func (r *gatedReadCloser) Read(p []byte) (int, error) {
 func (r *gatedReadCloser) Close() error {
 	r.closed = true
 	return nil
+}
+
+func TestAnnotateLeaseFailureWrapsStaleInfo(t *testing.T) {
+	cases := []struct {
+		name   string
+		status string
+		wrap   bool
+	}{
+		{name: "stale info", status: "stale info", wrap: true},
+		{name: "stale info with detail", status: "stale info, exp 1234, got abcd", wrap: true},
+		{name: "fetch first", status: "fetch first", wrap: true},
+		{name: "non-fast-forward", status: "non-fast-forward", wrap: true},
+		{name: "does not match expected old", status: "remote ref does not match expected old value", wrap: true},
+		{name: "unrelated reason passes through", status: "deny updating a hidden ref", wrap: false},
+		{name: "case-insensitive match", status: "Stale Info", wrap: true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			in := &packp.CommandStatusErr{ReferenceName: "refs/heads/main", Status: c.status}
+			out := annotateLeaseFailure(in)
+			wrapped := strings.Contains(out.Error(), "moved or differs from session start")
+			if wrapped != c.wrap {
+				t.Fatalf("wrap=%v want=%v (err=%q)", wrapped, c.wrap, out)
+			}
+			var inner *packp.CommandStatusErr
+			if !errors.As(out, &inner) || inner.Status != c.status {
+				t.Fatalf("annotateLeaseFailure must preserve the underlying CommandStatusErr; got %#v", out)
+			}
+		})
+	}
+}
+
+func TestAnnotateLeaseFailurePassesNonCommandStatusErrors(t *testing.T) {
+	err := errors.New("network blew up")
+	if got := annotateLeaseFailure(err); got != err {
+		t.Fatalf("unrelated error should pass through unchanged, got %v", got)
+	}
 }

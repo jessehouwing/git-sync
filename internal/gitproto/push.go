@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
@@ -104,6 +105,25 @@ func buildUpdateRequest(
 	return req, hasDelete, hasUpdates, nil
 }
 
+// annotateLeaseFailure wraps a CommandStatusErr whose status looks like a
+// lease failure (target ref moved during the sync, or the captured expected-old
+// no longer matches) with a hint pointing users at the retry/override path.
+// Other receive-pack errors pass through unchanged.
+func annotateLeaseFailure(err error) error {
+	var cs *packp.CommandStatusErr
+	if !errors.As(err, &cs) {
+		return err
+	}
+	status := strings.ToLower(cs.Status)
+	if !strings.Contains(status, "stale info") &&
+		!strings.Contains(status, "fetch first") &&
+		!strings.Contains(status, "non-fast-forward") &&
+		!strings.Contains(status, "does not match") {
+		return err
+	}
+	return fmt.Errorf("%w (target ref %s moved or differs from session start; rerun, or use --force-blind to overwrite)", err, cs.ReferenceName)
+}
+
 // sendReceivePack encodes and POSTs a receive-pack request, then decodes the report.
 func sendReceivePack(
 	ctx context.Context,
@@ -148,7 +168,7 @@ func sendReceivePack(
 		}
 		if onRejection == nil {
 			if err := report.Error(); err != nil {
-				return fmt.Errorf("report-status: %w", err)
+				return fmt.Errorf("report-status: %w", annotateLeaseFailure(err))
 			}
 			return nil
 		}
