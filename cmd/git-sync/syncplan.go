@@ -43,10 +43,7 @@ func newSyncLikeCmd(name, short string, dryRun bool, defaultMode gitsync.Operati
 		SilenceUsage:  true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if legacyForce {
-				return errors.New("--force has been removed; use --force-with-lease (previous --force semantics: receive-pack rejects updates where the target moved during the run) or --force-blind (true overwrite, matches `git push --force`)")
-			}
-			if req.Policy.ForceWithLease && req.Policy.ForceBlind {
-				return errors.New("--force-with-lease and --force-blind are mutually exclusive")
+				return errors.New("--force has been removed; use --force-with-lease (previous semantics) or --force-blind (real overwrite)")
 			}
 			req.Policy.Mode = gitsync.OperationMode(modeValue)
 			req.Policy.Protocol = gitsync.ProtocolMode(protocolVal)
@@ -122,6 +119,7 @@ func newSyncLikeCmd(name, short string, dryRun bool, defaultMode gitsync.Operati
 	if err := cmd.Flags().MarkHidden("force"); err != nil {
 		panic(err)
 	}
+	cmd.MarkFlagsMutuallyExclusive("force-with-lease", "force-blind")
 	cmd.Flags().BoolVar(&req.Policy.Prune, "prune", false, "delete managed target refs that no longer exist on source")
 	// Tag inclusion is now handled at the library level (AllRefs implies
 	// it in BuildDesiredRefs). Replicate keeps strict failure semantics —

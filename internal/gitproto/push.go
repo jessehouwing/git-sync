@@ -105,23 +105,31 @@ func buildUpdateRequest(
 	return req, hasDelete, hasUpdates, nil
 }
 
-// annotateLeaseFailure wraps a CommandStatusErr whose status looks like a
-// lease failure (target ref moved during the sync, or the captured expected-old
-// no longer matches) with a hint pointing users at the retry/override path.
-// Other receive-pack errors pass through unchanged.
+// leaseFailureMarkers are receive-pack ng reason substrings that indicate the
+// captured target tip didn't match what was on the server at push time. Match
+// is case-insensitive. CommandStatusErr.Status is a free-form string in go-git,
+// so substring matching is the only option absent upstream sentinels.
+var leaseFailureMarkers = []string{
+	"stale info",
+	"fetch first",
+	"non-fast-forward",
+	"does not match",
+}
+
+// annotateLeaseFailure wraps a lease-failure CommandStatusErr with a retry/
+// override hint. Other receive-pack errors pass through unchanged.
 func annotateLeaseFailure(err error) error {
 	var cs *packp.CommandStatusErr
 	if !errors.As(err, &cs) {
 		return err
 	}
 	status := strings.ToLower(cs.Status)
-	if !strings.Contains(status, "stale info") &&
-		!strings.Contains(status, "fetch first") &&
-		!strings.Contains(status, "non-fast-forward") &&
-		!strings.Contains(status, "does not match") {
-		return err
+	for _, marker := range leaseFailureMarkers {
+		if strings.Contains(status, marker) {
+			return fmt.Errorf("%w (target ref %s moved or differs from session start; rerun, or use --force-blind to overwrite)", err, cs.ReferenceName)
+		}
 	}
-	return fmt.Errorf("%w (target ref %s moved or differs from session start; rerun, or use --force-blind to overwrite)", err, cs.ReferenceName)
+	return err
 }
 
 // sendReceivePack encodes and POSTs a receive-pack request, then decodes the report.

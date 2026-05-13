@@ -595,7 +595,7 @@ func TestRun_ForceWithLeaseAndBlindAreMutuallyExclusive(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected --force-with-lease and --force-blind together to be rejected")
 	}
-	if !strings.Contains(err.Error(), "mutually exclusive") {
+	if !strings.Contains(err.Error(), "force-with-lease") || !strings.Contains(err.Error(), "force-blind") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
