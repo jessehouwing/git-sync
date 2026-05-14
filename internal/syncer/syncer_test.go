@@ -2,6 +2,8 @@ package syncer
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -244,8 +246,12 @@ func TestNewHTTPConn_PropagatesFollowInfoRefsRedirect(t *testing.T) {
 func TestNewConnBuildsSSHTransport(t *testing.T) {
 	orig := gitproto.SSHLookPath
 	t.Cleanup(func() { gitproto.SSHLookPath = orig })
+	script := filepath.Join(t.TempDir(), "ssh-stub.sh")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		t.Fatalf("write ssh stub: %v", err)
+	}
 	gitproto.SSHLookPath = func(string) (string, error) {
-		return "/usr/bin/ssh", nil
+		return script, nil
 	}
 
 	stats := newStats(false)
@@ -262,6 +268,49 @@ func TestNewConnBuildsSSHTransport(t *testing.T) {
 			}
 			if _, ok := conn.(*gitproto.SSHConn); !ok {
 				t.Fatalf("expected *gitproto.SSHConn, got %T", conn)
+			}
+		})
+	}
+}
+
+func TestSSHStatsWarning(t *testing.T) {
+	tests := []struct {
+		name   string
+		cfg    Config
+		source gitproto.Conn
+		target gitproto.Conn
+		want   bool
+	}{
+		{
+			name:   "no flags",
+			cfg:    Config{},
+			source: &gitproto.SSHConn{},
+		},
+		{
+			name:   "http only",
+			cfg:    Config{Progress: true},
+			source: &gitproto.HTTPConn{},
+			target: &gitproto.HTTPConn{},
+		},
+		{
+			name:   "progress with ssh source",
+			cfg:    Config{Progress: true},
+			source: &gitproto.SSHConn{},
+			want:   true,
+		},
+		{
+			name:   "show stats with ssh target",
+			cfg:    Config{ShowStats: true},
+			source: &gitproto.HTTPConn{},
+			target: &gitproto.SSHConn{},
+			want:   true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := sshStatsWarning(tt.cfg, tt.source, tt.target)
+			if (got != "") != tt.want {
+				t.Fatalf("sshStatsWarning() = %q, want warning=%t", got, tt.want)
 			}
 		})
 	}
