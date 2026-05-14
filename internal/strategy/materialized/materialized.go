@@ -31,6 +31,7 @@ type Params struct {
 	TargetRefs  map[plumbing.ReferenceName]plumbing.Hash
 	PushPlans   []planner.BranchPlan
 	MaxObjects  int
+	ForceBlind  bool
 }
 
 // DefaultMaxMaterializedObjects is the default safety limit for the materialized fallback path.
@@ -115,7 +116,7 @@ func (e *executor) enforceObjectLimit(hashes []plumbing.Hash) error {
 }
 
 func (e *executor) push(hashes []plumbing.Hash) error {
-	cmds := convert.PlansToPushCommands(e.params.PushPlans)
+	cmds := convert.PlansToPushCommands(e.params.PushPlans, e.params.ForceBlind)
 	if e.params.TargetPusher == nil {
 		return errors.New("materialized strategy requires TargetPusher")
 	}

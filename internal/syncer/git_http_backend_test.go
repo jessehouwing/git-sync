@@ -525,7 +525,7 @@ func TestBootstrap_GitHTTPBackendBatchedBranchResume(t *testing.T) {
 	}
 	desired, _, err := planner.BuildDesiredRefs(gitproto.RefHashMap(sourceRefs), planner.PlanConfig{
 		Branches: cfg.Branches, Mappings: cfg.Mappings, IncludeTags: cfg.IncludeTags,
-		Force: cfg.Force, Prune: cfg.Prune,
+		Force: cfg.ForceAny(), Prune: cfg.Prune,
 	})
 	if err != nil {
 		t.Fatalf("build desired refs: %v", err)
@@ -622,7 +622,7 @@ func TestBootstrap_GitHTTPBackendBatchedPlanningTracksBatchLimit(t *testing.T) {
 	}
 	desired, _, err := planner.BuildDesiredRefs(gitproto.RefHashMap(sourceRefs), planner.PlanConfig{
 		Branches: cfg.Branches, Mappings: cfg.Mappings, IncludeTags: cfg.IncludeTags,
-		Force: cfg.Force, Prune: cfg.Prune,
+		Force: cfg.ForceAny(), Prune: cfg.Prune,
 	})
 	if err != nil {
 		t.Fatalf("build desired refs: %v", err)

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/format/packfile"
@@ -104,6 +105,44 @@ func buildUpdateRequest(
 	return req, hasDelete, hasUpdates, nil
 }
 
+// leaseFailureMarkers are receive-pack ng reason substrings that indicate the
+// captured target tip didn't match what was on the server at push time. Match
+// is case-insensitive. CommandStatusErr.Status is a free-form string in go-git,
+// so substring matching is the only option absent upstream sentinels.
+var leaseFailureMarkers = []string{
+	"stale info",
+	"fetch first",
+	"non-fast-forward",
+	"does not match",
+}
+
+// IsLeaseFailure reports whether a receive-pack ng reason indicates the
+// captured target tip no longer matched at push time. Callers that downgrade
+// per-ref rejections to warnings (BestEffort) must still treat these as fatal
+// to preserve --force-with-lease semantics.
+func IsLeaseFailure(status string) bool {
+	lowered := strings.ToLower(status)
+	for _, marker := range leaseFailureMarkers {
+		if strings.Contains(lowered, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+// annotateLeaseFailure wraps a lease-failure CommandStatusErr with a retry/
+// override hint. Other receive-pack errors pass through unchanged.
+func annotateLeaseFailure(err error) error {
+	var cs *packp.CommandStatusErr
+	if !errors.As(err, &cs) {
+		return err
+	}
+	if !IsLeaseFailure(cs.Status) {
+		return err
+	}
+	return fmt.Errorf("%w (target ref %s moved or differs from session start; rerun, or use --force-blind to overwrite)", err, cs.ReferenceName)
+}
+
 // sendReceivePack encodes and POSTs a receive-pack request, then decodes the report.
 func sendReceivePack(
 	ctx context.Context,
@@ -148,7 +187,7 @@ func sendReceivePack(
 		}
 		if onRejection == nil {
 			if err := report.Error(); err != nil {
-				return fmt.Errorf("report-status: %w", err)
+				return fmt.Errorf("report-status: %w", annotateLeaseFailure(err))
 			}
 			return nil
 		}

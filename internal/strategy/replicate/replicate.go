@@ -67,7 +67,7 @@ func Execute(ctx context.Context, p Params) (Result, error) {
 		}
 		packReader = gitproto.LimitPackReader(packReader, p.MaxPackBytes)
 		packReader = closeOnce(packReader)
-		if err := p.TargetPusher.PushPack(ctx, convert.PlansToPushCommands(updatePlans), packReader); err != nil {
+		if err := p.TargetPusher.PushPack(ctx, convert.PlansToPushCommands(updatePlans, false), packReader); err != nil {
 			_ = packReader.Close()
 			return Result{}, fmt.Errorf("push target refs: %w", err)
 		}
@@ -75,7 +75,7 @@ func Execute(ctx context.Context, p Params) (Result, error) {
 	}
 
 	if len(deletePlans) > 0 {
-		if err := p.TargetPusher.PushCommands(ctx, convert.PlansToPushCommands(deletePlans)); err != nil {
+		if err := p.TargetPusher.PushCommands(ctx, convert.PlansToPushCommands(deletePlans, false)); err != nil {
 			return Result{}, fmt.Errorf("delete target refs: %w", err)
 		}
 	}

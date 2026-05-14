@@ -2,6 +2,8 @@ package gitsync
 
 import (
 	"context"
+	"errors"
+
 	"entire.io/entire/git-sync/internalbridge"
 )
 
@@ -93,13 +95,33 @@ type RefScope struct {
 
 // SyncPolicy controls high-level sync behavior. BestEffort downgrades per-ref
 // receive-pack rejections to warnings; pack-level failures remain fatal.
+//
+// ForceWithLease and ForceBlind both allow non-fast-forward branch updates and
+// tag retargets; they differ in how the push command's expected-old value is
+// set. ForceWithLease sends the target tip captured at session start, so
+// receive-pack rejects updates where the target moved during the run (the
+// "lease"). ForceBlind sends a zero expected-old, telling receive-pack to
+// overwrite regardless of the current target value — matching `git push
+// --force` semantics. The two are mutually exclusive.
 type SyncPolicy struct {
-	Mode        OperationMode `json:"mode"`
-	IncludeTags bool          `json:"includeTags"`
-	Force       bool          `json:"force"`
-	Prune       bool          `json:"prune"`
-	BestEffort  bool          `json:"bestEffort,omitempty"`
-	Protocol    ProtocolMode  `json:"protocol"`
+	Mode           OperationMode `json:"mode"`
+	IncludeTags    bool          `json:"includeTags"`
+	ForceWithLease bool          `json:"forceWithLease,omitempty"`
+	ForceBlind     bool          `json:"forceBlind,omitempty"`
+	Prune          bool          `json:"prune"`
+	BestEffort     bool          `json:"bestEffort,omitempty"`
+	Protocol       ProtocolMode  `json:"protocol"`
+}
+
+// Validate enforces SyncPolicy invariants at the request edge.
+func (p SyncPolicy) Validate() error {
+	if p.ForceWithLease && p.ForceBlind {
+		return errors.New("ForceWithLease and ForceBlind are mutually exclusive")
+	}
+	if p.Mode == ModeReplicate && (p.ForceWithLease || p.ForceBlind) {
+		return errors.New("replicate does not support force flags; use sync instead")
+	}
+	return nil
 }
 
 // ProbeRequest inspects source refs and optional target capabilities.

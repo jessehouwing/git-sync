@@ -330,7 +330,7 @@ func PlanRef(store storer.EncodedObjectStorer, want DesiredRef, targetHash plumb
 			return plan, nil
 		}
 		plan.Action = ActionBlock
-		plan.Reason = ShortHash(targetHash) + " differs from " + ShortHash(want.SourceHash) + "; use --force to update " + string(want.Kind) + " ref " + want.TargetRef.String()
+		plan.Reason = ShortHash(targetHash) + " differs from " + ShortHash(want.SourceHash) + "; use --force-with-lease to update " + string(want.Kind) + " ref " + want.TargetRef.String()
 		return plan, nil
 	}
 
@@ -339,7 +339,7 @@ func PlanRef(store storer.EncodedObjectStorer, want DesiredRef, targetHash plumb
 		if errors.Is(err, ErrAncestryDepthExceeded) {
 			// Can't prove fast-forward within depth limit — block with explanation.
 			plan.Action = ActionBlock
-			plan.Reason = "ancestry check for " + want.TargetRef.String() + " exceeded depth limit; use --force if this is a valid fast-forward"
+			plan.Reason = "ancestry check for " + want.TargetRef.String() + " exceeded depth limit; use --force-with-lease if this is a valid fast-forward"
 			return plan, nil
 		}
 		return plan, fmt.Errorf("check fast-forward for %s: %w", want.TargetRef, err)

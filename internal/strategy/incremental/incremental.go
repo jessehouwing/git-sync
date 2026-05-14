@@ -31,6 +31,7 @@ type Params struct {
 	PushPlans    []planner.BranchPlan
 	MaxPackBytes int64
 	Verbose      bool
+	ForceBlind   bool
 	CanRelay     func(bool, bool, bool, []planner.BranchPlan) (bool, string)
 	CanTagRelay  func([]planner.BranchPlan) (bool, string)
 }
@@ -53,7 +54,7 @@ func Execute(ctx context.Context, p Params, cfg planner.PlanConfig) (Result, err
 	if p.TargetPusher == nil {
 		return Result{}, errors.New("incremental strategy requires TargetPusher")
 	}
-	cmds := convert.PlansToPushCommands(p.PushPlans)
+	cmds := convert.PlansToPushCommands(p.PushPlans, p.ForceBlind)
 	if ok, reason := canRelay(cfg.Force, cfg.Prune, false, p.PushPlans); ok {
 		desired := convert.DesiredRefsForPlans(p.DesiredRefs, p.PushPlans)
 		packReader, err := p.SourceService.FetchPack(ctx, p.SourceConn, desired, p.TargetRefs)

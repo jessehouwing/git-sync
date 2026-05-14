@@ -31,6 +31,7 @@ func newSyncLikeCmd(name, short string, dryRun bool, defaultMode gitsync.Operati
 		branches    string
 		modeValue   = operationModeFlag(defaultOperationMode(defaultMode))
 		protocolVal = newProtocolFlag()
+		legacyForce bool
 		req         = unstable.SyncRequest{DryRun: dryRun}
 	)
 
@@ -41,6 +42,9 @@ func newSyncLikeCmd(name, short string, dryRun bool, defaultMode gitsync.Operati
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if legacyForce {
+				return errors.New("--force has been removed; use --force-with-lease (previous semantics) or --force-blind (real overwrite)")
+			}
 			req.Policy.Mode = gitsync.OperationMode(modeValue)
 			req.Policy.Protocol = gitsync.ProtocolMode(protocolVal)
 
@@ -109,7 +113,13 @@ func newSyncLikeCmd(name, short string, dryRun bool, defaultMode gitsync.Operati
 		cmd.Flags().Var(&modeValue, "mode", "operation mode: sync or replicate")
 	}
 	cmd.Flags().BoolVar(&req.Policy.IncludeTags, "tags", false, "mirror tags")
-	cmd.Flags().BoolVar(&req.Policy.Force, "force", false, "allow non-fast-forward branch updates and retarget tags")
+	cmd.Flags().BoolVar(&req.Policy.ForceWithLease, "force-with-lease", false, "allow non-fast-forward branch updates and retarget tags; receive-pack rejects updates where the target moved during the run (lease captured at session start)")
+	cmd.Flags().BoolVar(&req.Policy.ForceBlind, "force-blind", false, "allow non-fast-forward branch updates and retarget tags; overwrite regardless of current target tip (matches `git push --force`)")
+	cmd.Flags().BoolVar(&legacyForce, "force", false, "removed: pick --force-with-lease (previous semantics) or --force-blind (real overwrite)")
+	if err := cmd.Flags().MarkHidden("force"); err != nil {
+		panic(err)
+	}
+	cmd.MarkFlagsMutuallyExclusive("force-with-lease", "force-blind")
 	cmd.Flags().BoolVar(&req.Policy.Prune, "prune", false, "delete managed target refs that no longer exist on source")
 	// Tag inclusion is now handled at the library level (AllRefs implies
 	// it in BuildDesiredRefs). Replicate keeps strict failure semantics —

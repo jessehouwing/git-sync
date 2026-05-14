@@ -205,9 +205,9 @@ best-effort completeness against hostile targets.
 
 `sync --all-refs` blocks updates to non-branch refs (notes, pulls, custom
 namespaces) by default — those refs don't generally form fast-forward
-chains, so the same `--force` opt-in that retargets tags is required to
-update them. `replicate` doesn't run that check; its overwrite contract
-covers other-kind refs without `--force`.
+chains, so the same `--force-with-lease` opt-in that retargets tags is
+required to update them. `replicate` doesn't run that check; its overwrite
+contract covers other-kind refs without a force flag.
 
 `SyncPolicy.BestEffort` is independent of scope and can be set without
 `AllRefs` if a library caller wants per-ref warn semantics on a narrower
@@ -221,6 +221,40 @@ git-sync sync \
   <source-url> \
   <target-url>
 ```
+
+## Force Updates and the Per-Run Lease
+
+Non-fast-forward updates and tag retargets are opt-in. git-sync exposes two
+flags that mirror `git push`'s force semantics:
+
+- **`--force-with-lease`** — allow non-fast-forward updates, but include the
+  target tip captured at session start as the push command's expected-old
+  value. If another writer moves the target between session start and the
+  push, receive-pack rejects the update with a "remote ref does not match
+  expected old value" error and the sync fails without clobbering the racing
+  write. The lease window is one sync run; git-sync keeps no state between
+  runs.
+- **`--force-blind`** — allow non-fast-forward updates and zero out the
+  expected-old, telling receive-pack to overwrite regardless of current
+  target value. Matches `git push --force` semantics. Use this when the
+  target was edited out-of-band and you intend to overwrite whatever is
+  there.
+
+The two flags are mutually exclusive. Without either, divergent or
+non-ancestor refs are reported as blocked and the sync exits non-zero
+before any push, so the lease check is a second line of defense against
+races for users who opt into non-fast-forward updates.
+
+`bootstrap` and `replicate` do not accept force flags. Bootstrap seeds an
+empty target where every ref is a create. Replicate's contract is
+source-authoritative overwrite: divergent branches and tags are retargeted
+against the source unconditionally, so there is no fast-forward gate for a
+force flag to opt out of.
+
+The pre-0.5 `--force` flag is removed. Its semantics were lease-protected
+(it never sent a zero expected-old), so the closest direct replacement is
+`--force-with-lease`. `--force-blind` is new behavior with no pre-0.5
+analog.
 
 ## HEAD / Default Branch
 
@@ -288,7 +322,7 @@ That means local testing against a dummy GitHub repo can reuse your regular Git 
 
 - Source-side discovery and fetch can use protocol v2 when supported. Push stays on the existing v1 `receive-pack` path. `--protocol auto` tries v2 first and falls back to v1. `--protocol v2` requires the source to negotiate v2.
 - Source fetch advertises current target tip hashes as `have`, so reruns download less when source and target already share history.
-- Branches are updated only when the target tip is an ancestor of the source tip, unless `--force` is set. Tags are immutable by default. Retargeting an existing tag requires `--force`. With `--prune`, managed target refs that are absent on source are deleted.
+- Branches are updated only when the target tip is an ancestor of the source tip, unless `--force-with-lease` or `--force-blind` is set. Tags are immutable by default; retargeting an existing tag requires one of the force flags. With `--prune`, managed target refs that are absent on source are deleted.
 - If `sync` finds blocked refs, it exits non-zero before pushing anything.
 - `--stats` adds per-service request, byte, want, have, and command counters to the output.
 

@@ -79,7 +79,8 @@ type Config struct {
 	MeasureMemory          bool
 	Progress               bool
 	Mode                   string
-	Force                  bool
+	ForceWithLease         bool
+	ForceBlind             bool
 	Prune                  bool
 	BestEffort             bool
 	MaxPackBytes           int64
@@ -425,6 +426,37 @@ func tallyActions(plans []BranchPlan) (pushed, deleted int) {
 	return pushed, deleted
 }
 
+// leaseFailureError surfaces receive-pack lease misses as a fatal error even
+// when BestEffort would otherwise downgrade them. Without this, a sync with
+// both --force-with-lease and --all-refs (which implies BestEffort) would
+// silently treat a concurrent target update as a warning, defeating the lease.
+//
+// Scoped to --force-with-lease only. The lease-failure marker set in gitproto
+// is intentionally broad to cover phrasing across servers (stale info / fetch
+// first / non-fast-forward / does not match), but under --force-blind or
+// non-force runs those same messages can mean ordinary policy rejection rather
+// than a stale lease, which BestEffort is allowed to downgrade. The contract
+// is only made when the user explicitly opts in.
+func (s *syncSession) leaseFailureError() error {
+	if !s.cfg.ForceWithLease {
+		return nil
+	}
+	if len(s.rejections) == 0 {
+		return nil
+	}
+	var refs []string
+	for name, status := range s.rejections {
+		if gitproto.IsLeaseFailure(status) {
+			refs = append(refs, name.String())
+		}
+	}
+	if len(refs) == 0 {
+		return nil
+	}
+	sort.Strings(refs)
+	return fmt.Errorf("lease failure on %d ref(s) (%s) — target moved during sync; rerun, or use --force-blind to overwrite", len(refs), strings.Join(refs, ", "))
+}
+
 // applyRejections downgrades plans whose ref was rejected by the target to
 // ActionWarn and returns the count.
 func (s *syncSession) applyRejections(plans []BranchPlan) int {
@@ -455,10 +487,15 @@ func planConfig(cfg Config) planner.PlanConfig {
 		IncludeTags:        cfg.IncludeTags,
 		AllRefs:            cfg.AllRefs,
 		ExcludeRefPrefixes: cfg.ExcludeRefPrefixes,
-		Force:              cfg.Force,
+		Force:              cfg.ForceAny(),
 		Prune:              cfg.Prune,
 	}
 }
+
+// ForceAny reports whether either force flag is set. Used by call sites that
+// only care about "is this run allowed to do non-fast-forward updates?" rather
+// than the lease-vs-blind distinction.
+func (c Config) ForceAny() bool { return c.ForceWithLease || c.ForceBlind }
 
 // needsLocalSourceClosure reports whether the sync must populate the
 // in-memory store with the full source closure before running. The fetch
@@ -478,7 +515,7 @@ func needsLocalSourceClosure(
 	desired map[plumbing.ReferenceName]planner.DesiredRef,
 	targetRefs map[plumbing.ReferenceName]plumbing.Hash,
 ) bool {
-	if cfg.Force || cfg.Prune {
+	if cfg.ForceAny() || cfg.Prune {
 		return true
 	}
 	for targetRef, want := range desired {
@@ -560,8 +597,11 @@ func newSession(ctx context.Context, cfg Config, needTarget bool) (*syncSession,
 	if _, err := validation.ValidateMappings(cfg.Mappings, cfg.AllRefs); err != nil {
 		return nil, fmt.Errorf("validate mappings: %w", err)
 	}
-	if cfg.Mode == modeReplicate && cfg.Force {
-		return nil, errors.New("replicate does not support --force; use sync instead")
+	if cfg.ForceWithLease && cfg.ForceBlind {
+		return nil, errors.New("--force-with-lease and --force-blind are mutually exclusive")
+	}
+	if cfg.Mode == modeReplicate && cfg.ForceAny() {
+		return nil, errors.New("replicate does not support force flags; use sync instead")
 	}
 	if needTarget {
 		if err := validation.ValidateEndpoints(cfg.Source.URL, cfg.Target.URL); err != nil {
@@ -686,7 +726,7 @@ func (s *syncSession) runSync(ctx context.Context) (Result, error) {
 	}
 
 	// Check for bootstrap opportunity (before allocating in-memory repo)
-	if ok, reason := planner.CanBootstrapRelay(s.cfg.Force, s.cfg.Prune, desiredRefs, targetRefMap); ok {
+	if ok, reason := planner.CanBootstrapRelay(s.cfg.ForceAny(), s.cfg.Prune, desiredRefs, targetRefMap); ok {
 		if s.cfg.DryRun {
 			plans, err := planner.BuildBootstrapPlans(desiredRefs, targetRefMap)
 			if err != nil {
@@ -762,9 +802,9 @@ func (s *syncSession) runSync(ctx context.Context) (Result, error) {
 	}
 
 	if !s.cfg.DryRun && result.Blocked > 0 {
-		return result, fmt.Errorf("blocked %d ref update(s); rerun with --force where appropriate", result.Blocked)
+		return result, fmt.Errorf("blocked %d ref update(s); rerun with --force-with-lease (or --force-blind) where appropriate", result.Blocked)
 	}
-	result.RelayReason = planner.RelayFallbackReason(s.cfg.Force, s.cfg.Prune, s.cfg.DryRun, pushPlans, s.target.policy)
+	result.RelayReason = planner.RelayFallbackReason(s.cfg.ForceAny(), s.cfg.Prune, s.cfg.DryRun, pushPlans, s.target.policy)
 
 	if !s.cfg.DryRun {
 		// Try incremental relay first
@@ -792,6 +832,9 @@ func (s *syncSession) runSync(ctx context.Context) (Result, error) {
 	}
 
 	s.finalizeCounts(pushPlans, &result)
+	if err := s.leaseFailureError(); err != nil {
+		return result, err
+	}
 	result.Stats = stats.snapshot()
 	result.Measurement = measurementDone()
 	return result, nil
@@ -886,6 +929,9 @@ func (s *syncSession) runReplicate(ctx context.Context) (Result, error) {
 	}
 
 	s.finalizeCounts(pushPlans, &result)
+	if err := s.leaseFailureError(); err != nil {
+		return result, err
+	}
 	result.Stats = s.stats.snapshot()
 	result.Measurement = s.measurementDone()
 	return result, nil
@@ -927,8 +973,8 @@ func (s *syncSession) replicateCanBootstrap(desiredRefs map[plumbing.ReferenceNa
 
 // Bootstrap seeds an empty target with relay behavior.
 func Bootstrap(ctx context.Context, cfg Config) (Result, error) {
-	if cfg.Force {
-		return Result{}, errors.New("bootstrap does not support --force")
+	if cfg.ForceAny() {
+		return Result{}, errors.New("bootstrap does not support force flags")
 	}
 	if cfg.Prune {
 		return Result{}, errors.New("bootstrap does not support --prune")
@@ -951,7 +997,7 @@ func Bootstrap(ctx context.Context, cfg Config) (Result, error) {
 		return Result{}, errors.New("no source refs matched")
 	}
 
-	_, reason := planner.CanBootstrapRelay(cfg.Force, cfg.Prune, desiredRefs, s.target.refMap)
+	_, reason := planner.CanBootstrapRelay(cfg.ForceAny(), cfg.Prune, desiredRefs, s.target.refMap)
 	result, err := bootstrapWithInputs(ctx, s, desiredRefs, s.target.refMap, reason)
 	result.Measurement = s.measurementDone()
 	return result, err
@@ -1054,6 +1100,7 @@ func (s *syncSession) executeIncremental(
 		SourceConn: s.sourceConn, SourceService: s.sourceService, TargetPusher: s.target.pusher,
 		DesiredRefs: desiredRefs, TargetRefs: s.target.refMap,
 		PushPlans: pushPlans, MaxPackBytes: s.cfg.MaxPackBytes,
+		ForceBlind: s.cfg.ForceBlind,
 		CanRelay: func(force, prune, dryRun bool, plans []planner.BranchPlan) (bool, string) {
 			return planner.CanIncrementalRelay(force, prune, dryRun, plans, s.target.policy)
 		},
@@ -1075,6 +1122,7 @@ func (s *syncSession) executeMaterialized(
 		Store: store, SourceConn: s.sourceConn, SourceService: s.sourceService, TargetPusher: s.target.pusher,
 		DesiredRefs: desiredRefs, TargetRefs: s.target.refMap,
 		PushPlans: pushPlans, MaxObjects: s.cfg.MaterializedMaxObjects,
+		ForceBlind: s.cfg.ForceBlind,
 	}); err != nil {
 		return fmt.Errorf("materialized execute: %w", err)
 	}

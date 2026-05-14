@@ -153,6 +153,9 @@ func (r SyncRequest) Validate() error {
 	if err := validateOperationMode(r.Policy.Mode); err != nil {
 		return err
 	}
+	if err := r.Policy.Validate(); err != nil {
+		return err
+	}
 	if _, err := validation.NormalizeProtocolMode(string(r.Policy.Protocol)); err != nil {
 		return fmt.Errorf("normalize protocol: %w", err)
 	}
@@ -170,6 +173,9 @@ func (r PlanRequest) Validate() error {
 		return errors.New("target URL is required")
 	}
 	if err := validateOperationMode(r.Policy.Mode); err != nil {
+		return err
+	}
+	if err := r.Policy.Validate(); err != nil {
 		return err
 	}
 	if _, err := validation.NormalizeProtocolMode(string(r.Policy.Protocol)); err != nil {
@@ -228,12 +234,13 @@ func bridgeScope(scope RefScope) internalbridge.RefScope {
 
 func bridgePolicy(policy SyncPolicy) internalbridge.SyncPolicy {
 	return internalbridge.SyncPolicy{
-		Mode:        internalbridge.OperationMode(policy.Mode),
-		IncludeTags: policy.IncludeTags,
-		Force:       policy.Force,
-		Prune:       policy.Prune,
-		BestEffort:  policy.BestEffort,
-		Protocol:    internalbridge.ProtocolMode(policy.Protocol),
+		Mode:           internalbridge.OperationMode(policy.Mode),
+		IncludeTags:    policy.IncludeTags,
+		ForceWithLease: policy.ForceWithLease,
+		ForceBlind:     policy.ForceBlind,
+		Prune:          policy.Prune,
+		BestEffort:     policy.BestEffort,
+		Protocol:       internalbridge.ProtocolMode(policy.Protocol),
 	}
 }
 

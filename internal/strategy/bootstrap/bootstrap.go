@@ -176,7 +176,7 @@ func Execute(ctx context.Context, p Params, relayReason string) (Result, error) 
 	if p.OnPhase != nil {
 		p.OnPhase("pushing pack")
 	}
-	cmds := convert.PlansToPushCommands(hoistSourceHeadPlan(plans, p.SourceHeadTarget))
+	cmds := convert.PlansToPushCommands(hoistSourceHeadPlan(plans, p.SourceHeadTarget), false)
 	pushErr := p.TargetPusher.PushPack(ctx, cmds, packReader)
 	_ = packReader.Close()
 	if pushErr != nil {
@@ -486,7 +486,7 @@ func executeBatched( //nolint:maintidx // complex batch logic is inherently bran
 				"target_limit_bytes", p.TargetMaxPack,
 				"calibrated_bytes_per_object", calibratedBytesPerObject)
 
-			cmds := convert.PlansToPushCommands(stagePlans)
+			cmds := convert.PlansToPushCommands(stagePlans, false)
 			observer := newPackStreamObserver(packReader)
 			if selfImposedBudget > 0 {
 				budget := selfImposedBudget
@@ -671,7 +671,7 @@ func executeBatched( //nolint:maintidx // complex batch logic is inherently bran
 		packReader, err := p.SourceService.FetchPack(ctx, p.SourceConn, tailDesired, tailTargetRefs)
 		if err != nil {
 			if errors.Is(err, git.NoErrAlreadyUpToDate) {
-				cmds := convert.PlansToPushCommands(tailPlans)
+				cmds := convert.PlansToPushCommands(tailPlans, false)
 				if err := p.TargetPusher.PushCommands(ctx, cmds); err != nil {
 					return result, fmt.Errorf("create tail refs after bootstrap: %w", err)
 				}
@@ -681,7 +681,7 @@ func executeBatched( //nolint:maintidx // complex batch logic is inherently bran
 		} else {
 			packReader = gitproto.LimitPackReader(packReader, p.MaxPackBytes)
 			packReader = closeOnce(packReader)
-			cmds := convert.PlansToPushCommands(tailPlans)
+			cmds := convert.PlansToPushCommands(tailPlans, false)
 			if err := p.TargetPusher.PushPack(ctx, cmds, packReader); err != nil {
 				_ = packReader.Close()
 				return result, fmt.Errorf("push bootstrap tail refs: %w", err)

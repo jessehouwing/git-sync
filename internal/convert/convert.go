@@ -60,7 +60,9 @@ func PlansToPushPlans(plans []planner.BranchPlan) []gitproto.PushPlan {
 }
 
 // PlansToPushCommands converts planner BranchPlans directly to gitproto PushCommands.
-func PlansToPushCommands(plans []planner.BranchPlan) []gitproto.PushCommand {
+// When forceBlind is true, non-delete commands send a zero expected-old so
+// receive-pack overwrites regardless of current target value; see SyncPolicy.
+func PlansToPushCommands(plans []planner.BranchPlan, forceBlind bool) []gitproto.PushCommand {
 	out := make([]gitproto.PushCommand, len(plans))
 	for i, p := range plans {
 		out[i] = gitproto.PushCommand{
@@ -71,6 +73,8 @@ func PlansToPushCommands(plans []planner.BranchPlan) []gitproto.PushCommand {
 		}
 		if out[i].Delete {
 			out[i].New = plumbing.ZeroHash
+		} else if forceBlind {
+			out[i].Old = plumbing.ZeroHash
 		}
 	}
 	return out

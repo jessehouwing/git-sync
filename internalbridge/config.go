@@ -47,12 +47,13 @@ type RefScope struct {
 }
 
 type SyncPolicy struct {
-	Mode        OperationMode
-	IncludeTags bool
-	Force       bool
-	Prune       bool
-	BestEffort  bool
-	Protocol    ProtocolMode
+	Mode           OperationMode
+	IncludeTags    bool
+	ForceWithLease bool
+	ForceBlind     bool
+	Prune          bool
+	BestEffort     bool
+	Protocol       ProtocolMode
 }
 
 func ProbeConfig(source Endpoint, sourceAuth EndpointAuth, target *Endpoint, targetAuth EndpointAuth, protocol ProtocolMode, includeTags, allRefs, collectStats bool, excludeRefPrefixes []string, httpClient *http.Client) Config {
@@ -84,7 +85,8 @@ func SyncConfig(source Endpoint, sourceAuth EndpointAuth, target Endpoint, targe
 		DryRun:                 dryRun,
 		ShowStats:              collectStats,
 		Mode:                   operationModeString(policy.Mode),
-		Force:                  policy.Force,
+		ForceWithLease:         policy.ForceWithLease,
+		ForceBlind:             policy.ForceBlind,
 		Prune:                  policy.Prune,
 		BestEffort:             policy.BestEffort,
 		ProtocolMode:           protocolString(policy.Protocol),

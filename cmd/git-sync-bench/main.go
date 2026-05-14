@@ -106,7 +106,10 @@ func run(ctx context.Context, args []string) error {
 	branches := fs.String("branch", "", "comma-separated branch list; default is all source branches")
 	fs.Var(&mappings, "map", "ref mapping in src:dst form; short names map branches, full refs map exact refs")
 	fs.BoolVar(&cfg.Policy.IncludeTags, "tags", false, "mirror tags")
-	fs.BoolVar(&cfg.Policy.Force, "force", false, "allow non-fast-forward branch updates and retarget tags")
+	fs.BoolVar(&cfg.Policy.ForceWithLease, "force-with-lease", false, "allow non-fast-forward branch updates with per-run lease")
+	fs.BoolVar(&cfg.Policy.ForceBlind, "force-blind", false, "allow non-fast-forward branch updates; overwrite regardless of current target tip")
+	var legacyForce bool
+	fs.BoolVar(&legacyForce, "force", false, "removed: pick --force-with-lease or --force-blind")
 	fs.BoolVar(&cfg.Policy.Prune, "prune", false, "delete managed target refs that no longer exist on source")
 	fs.BoolVar(&cfg.Options.CollectStats, "stats", false, "collect transfer statistics")
 	fs.BoolVar(&cfg.Options.MeasureMemory, "measure-memory", true, "sample elapsed time and Go heap usage")
@@ -118,6 +121,12 @@ func run(ctx context.Context, args []string) error {
 
 	if err := fs.Parse(args); err != nil {
 		return fmt.Errorf("parse flags: %w", err)
+	}
+	if legacyForce {
+		return usageError("--force has been removed; use --force-with-lease or --force-blind")
+	}
+	if cfg.Policy.ForceWithLease && cfg.Policy.ForceBlind {
+		return usageError("--force-with-lease and --force-blind are mutually exclusive")
 	}
 	cfg.Policy.Protocol = gitsync.ProtocolMode(benchProtocol)
 	if len(fs.Args()) > 0 {
@@ -152,8 +161,8 @@ func run(ctx context.Context, args []string) error {
 		return err
 	}
 	if sc == scenarioBootstrap {
-		if cfg.Policy.Force || cfg.Policy.Prune {
-			return usageError("bootstrap benchmarks do not support --force or --prune")
+		if cfg.Policy.ForceWithLease || cfg.Policy.ForceBlind || cfg.Policy.Prune {
+			return usageError("bootstrap benchmarks do not support force flags or --prune")
 		}
 	}
 
@@ -450,7 +459,7 @@ func splitCSV(value string) []string {
 }
 
 func usageError(message string) error {
-	usage := fmt.Sprintf("usage:\n  %s --source-url <repo> [flags]\n\nflags:\n  --scenario bootstrap|sync\n  --repeat 3\n  --work-dir /tmp/git-sync-bench\n  --keep-targets\n  --json\n  --branch main,release\n  --map main:stable\n  --tags\n  --force\n  --prune\n  --stats\n  --measure-memory\n  --max-pack-bytes 104857600\n  --target-max-pack-bytes 104857600\n  --protocol auto|v1|v2\n  -v\n", os.Args[0])
+	usage := fmt.Sprintf("usage:\n  %s --source-url <repo> [flags]\n\nflags:\n  --scenario bootstrap|sync\n  --repeat 3\n  --work-dir /tmp/git-sync-bench\n  --keep-targets\n  --json\n  --branch main,release\n  --map main:stable\n  --tags\n  --force-with-lease\n  --force-blind\n  --prune\n  --stats\n  --measure-memory\n  --max-pack-bytes 104857600\n  --target-max-pack-bytes 104857600\n  --protocol auto|v1|v2\n  -v\n", os.Args[0])
 	if message == "" {
 		return errors.New(strings.TrimSpace(usage))
 	}

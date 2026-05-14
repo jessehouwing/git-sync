@@ -557,14 +557,45 @@ func TestRun_Sync_AllRefsWarnsOnNg(t *testing.T) {
 func TestRun_Replicate_SubcommandRejectsForce(t *testing.T) {
 	err := run(context.Background(), []string{
 		modeReplicate,
+		"--force-with-lease",
+		"http://127.0.0.1:1/source.git",
+		"http://127.0.0.1:1/target.git",
+	})
+	if err == nil {
+		t.Fatal("expected replicate --force-with-lease to be rejected")
+	}
+	if !strings.Contains(err.Error(), "replicate does not support force flags") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRun_LegacyForceFlagRejected(t *testing.T) {
+	err := run(context.Background(), []string{
+		"sync",
 		"--force",
 		"http://127.0.0.1:1/source.git",
 		"http://127.0.0.1:1/target.git",
 	})
 	if err == nil {
-		t.Fatal("expected replicate --force to be rejected")
+		t.Fatal("expected --force to be rejected")
 	}
-	if !strings.Contains(err.Error(), "replicate does not support --force") {
+	if !strings.Contains(err.Error(), "--force has been removed") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRun_ForceWithLeaseAndBlindAreMutuallyExclusive(t *testing.T) {
+	err := run(context.Background(), []string{
+		"sync",
+		"--force-with-lease",
+		"--force-blind",
+		"http://127.0.0.1:1/source.git",
+		"http://127.0.0.1:1/target.git",
+	})
+	if err == nil {
+		t.Fatal("expected --force-with-lease and --force-blind together to be rejected")
+	}
+	if !strings.Contains(err.Error(), "force-with-lease") || !strings.Contains(err.Error(), "force-blind") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

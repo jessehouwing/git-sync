@@ -54,7 +54,7 @@ func TestPlansToPushCommands(t *testing.T) {
 		{TargetRef: plumbing.NewBranchReferenceName("old"), TargetHash: oldHash, Action: planner.ActionDelete},
 	}
 
-	got := PlansToPushCommands(plans)
+	got := PlansToPushCommands(plans, false)
 	want := []gitproto.PushCommand{
 		{Name: ref, Old: oldHash, New: newHash},
 		{Name: plumbing.NewBranchReferenceName("old"), Old: oldHash, Delete: true},
@@ -66,5 +66,13 @@ func TestPlansToPushCommands(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("got[%d] = %+v, want %+v", i, got[i], want[i])
 		}
+	}
+
+	gotBlind := PlansToPushCommands(plans, true)
+	if !gotBlind[0].Old.IsZero() {
+		t.Fatalf("force-blind update should zero Old, got %v", gotBlind[0].Old)
+	}
+	if gotBlind[1].Old != oldHash {
+		t.Fatalf("force-blind delete should keep target hash, got %v want %v", gotBlind[1].Old, oldHash)
 	}
 }

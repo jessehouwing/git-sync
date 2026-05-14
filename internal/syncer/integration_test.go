@@ -163,7 +163,7 @@ func TestRun_IntegrationMaterializedLimitFailsClearly(t *testing.T) {
 		Source:                 Endpoint{URL: sourceServer.RepoURL()},
 		Target:                 Endpoint{URL: targetServer.RepoURL()},
 		ProtocolMode:           protocolModeAuto,
-		Force:                  true,
+		ForceWithLease:         true,
 		MaterializedMaxObjects: 1,
 	})
 	if err == nil {
@@ -1956,9 +1956,9 @@ func TestRun_IntegrationTagsPruneAndForce(t *testing.T) {
 	}
 
 	if _, err := Run(context.Background(), Config{
-		Source: Endpoint{URL: sourceServer.RepoURL()},
-		Target: Endpoint{URL: targetServer.RepoURL()},
-		Force:  true,
+		Source:         Endpoint{URL: sourceServer.RepoURL()},
+		Target:         Endpoint{URL: targetServer.RepoURL()},
+		ForceWithLease: true,
 	}); err != nil {
 		t.Fatalf("expected forced sync to succeed: %v", err)
 	}
@@ -2659,15 +2659,15 @@ func TestRun_ReplicateRejectsForceAtSessionConstruction(t *testing.T) {
 	// The Force-with-replicate check happens before any network I/O, so the URLs
 	// never get dialed. Using obviously-invalid URLs also asserts that fact.
 	_, err := Run(context.Background(), Config{
-		Source: Endpoint{URL: "http://127.0.0.1:1/source.git"},
-		Target: Endpoint{URL: "http://127.0.0.1:1/target.git"},
-		Mode:   modeReplicate,
-		Force:  true,
+		Source:         Endpoint{URL: "http://127.0.0.1:1/source.git"},
+		Target:         Endpoint{URL: "http://127.0.0.1:1/target.git"},
+		Mode:           modeReplicate,
+		ForceWithLease: true,
 	})
 	if err == nil {
 		t.Fatal("expected replicate+force to be rejected")
 	}
-	if !strings.Contains(err.Error(), "replicate does not support --force") ||
+	if !strings.Contains(err.Error(), "replicate does not support force flags") ||
 		!strings.Contains(err.Error(), "use sync instead") {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -3324,12 +3324,12 @@ func TestRun_IntegrationAllRefsSyncOtherKindUpdateRequiresForce(t *testing.T) {
 	if notesPlan.Action != ActionBlock {
 		t.Errorf("expected notes ref Action=%s, got %s", ActionBlock, notesPlan.Action)
 	}
-	if !strings.Contains(notesPlan.Reason, "use --force to update other ref") {
+	if !strings.Contains(notesPlan.Reason, "use --force-with-lease to update other ref") {
 		t.Errorf("expected clear --force-required reason for other-kind ref, got %q", notesPlan.Reason)
 	}
 
-	// Same scenario with --force succeeds.
-	cfg.Force = true
+	// Same scenario with --force-with-lease succeeds.
+	cfg.ForceWithLease = true
 	if _, err := Run(context.Background(), cfg); err != nil {
 		t.Fatalf("force-update of other-kind ref failed: %v", err)
 	}
