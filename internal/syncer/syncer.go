@@ -349,7 +349,7 @@ func measurementLine(m Measurement) []string {
 
 // --- Session setup ---
 
-func newConn(raw Endpoint, label string, stats *statsCollector, httpClient *http.Client) (gitproto.Conn, error) {
+func newConn(raw Endpoint, label string, stats *statsCollector, httpClient *http.Client) (gitproto.Conn, error) { //nolint:ireturn // transport selection intentionally returns the shared connection interface
 	ep, err := transport.ParseURL(raw.URL)
 	if err != nil {
 		return nil, fmt.Errorf("parse endpoint: %w", err)
@@ -357,7 +357,11 @@ func newConn(raw Endpoint, label string, stats *statsCollector, httpClient *http
 	switch ep.Scheme {
 	case "ssh", "git+ssh":
 		stats.setSideDisplay(label, hostnameFromURL(raw.URL))
-		return gitproto.NewSSHConn(ep, label)
+		conn, err := gitproto.NewSSHConn(ep, label)
+		if err != nil {
+			return nil, fmt.Errorf("new SSH connection: %w", err)
+		}
+		return conn, nil
 	}
 	authEp := auth.Endpoint{
 		Username:      raw.Username,

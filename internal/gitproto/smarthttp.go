@@ -152,12 +152,16 @@ func NewHTTPTransport(skipTLS bool) http.RoundTripper {
 
 // RequestInfoRefs fetches /info/refs for the given service.
 func RequestInfoRefs(ctx context.Context, conn Conn, service string, gitProtocol string) ([]byte, error) {
-	return conn.RequestInfoRefs(ctx, service, gitProtocol)
+	data, err := conn.RequestInfoRefs(ctx, service, gitProtocol)
+	if err != nil {
+		return nil, fmt.Errorf("request info refs: %w", err)
+	}
+	return data, nil
 }
 
 // RequestInfoRefs fetches /info/refs for the given service.
-func (conn *HTTPConn) RequestInfoRefs(ctx context.Context, service string, gitProtocol string) ([]byte, error) {
-	reqURL := fmt.Sprintf("%s/info/refs?service=%s", conn.EndpointURL.String(), service)
+func (c *HTTPConn) RequestInfoRefs(ctx context.Context, service string, gitProtocol string) ([]byte, error) {
+	reqURL := fmt.Sprintf("%s/info/refs?service=%s", c.EndpointURL.String(), service)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create info-refs request: %w", err)
@@ -168,9 +172,9 @@ func (conn *HTTPConn) RequestInfoRefs(ctx context.Context, service string, gitPr
 	if gitProtocol != "" {
 		req.Header.Set("Git-Protocol", gitProtocol)
 	}
-	ApplyAuth(req, conn.Auth)
+	ApplyAuth(req, c.Auth)
 
-	res, err := conn.HTTP.Do(req)
+	res, err := c.HTTP.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request info-refs: %w", err)
 	}
@@ -189,11 +193,11 @@ func (conn *HTTPConn) RequestInfoRefs(ctx context.Context, service string, gitPr
 	if gotMediaType != wantContentType {
 		return nil, fmt.Errorf("unexpected info/refs content-type %q, want %q", gotContentType, wantContentType)
 	}
-	if conn.FollowInfoRefsRedirect && res.Request != nil && res.Request.URL != nil {
+	if c.FollowInfoRefsRedirect && res.Request != nil && res.Request.URL != nil {
 		final := res.Request.URL
-		if final.Host != conn.EndpointURL.Host || final.Scheme != conn.EndpointURL.Scheme {
-			conn.EndpointURL.Scheme = final.Scheme
-			conn.EndpointURL.Host = final.Host
+		if final.Host != c.EndpointURL.Host || final.Scheme != c.EndpointURL.Scheme {
+			c.EndpointURL.Scheme = final.Scheme
+			c.EndpointURL.Host = final.Host
 		}
 	}
 	// Bound the read to prevent unbounded memory allocation (issue #9).
@@ -238,13 +242,17 @@ func PostRPCStream(ctx context.Context, conn Conn, service string, body []byte, 
 // PostRPCStreamBody sends a POST to the given service using a streaming request body.
 // Caller must close the returned ReadCloser.
 func PostRPCStreamBody(ctx context.Context, conn Conn, service string, body io.Reader, v2 bool, phase string) (io.ReadCloser, error) {
-	return conn.PostRPCStreamBody(ctx, service, body, v2, phase)
+	reader, err := conn.PostRPCStreamBody(ctx, service, body, v2, phase)
+	if err != nil {
+		return nil, fmt.Errorf("post RPC stream body: %w", err)
+	}
+	return reader, nil
 }
 
 // PostRPCStreamBody sends a POST to the given service using a streaming request body.
 // Caller must close the returned ReadCloser.
-func (conn *HTTPConn) PostRPCStreamBody(ctx context.Context, service string, body io.Reader, v2 bool, phase string) (io.ReadCloser, error) {
-	reqURL := fmt.Sprintf("%s/%s", conn.EndpointURL.String(), service)
+func (c *HTTPConn) PostRPCStreamBody(ctx context.Context, service string, body io.Reader, v2 bool, phase string) (io.ReadCloser, error) {
+	reqURL := fmt.Sprintf("%s/%s", c.EndpointURL.String(), service)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, body)
 	if err != nil {
 		return nil, fmt.Errorf("create RPC request: %w", err)
@@ -256,9 +264,9 @@ func (conn *HTTPConn) PostRPCStreamBody(ctx context.Context, service string, bod
 	if v2 {
 		req.Header.Set("Git-Protocol", "version=2")
 	}
-	ApplyAuth(req, conn.Auth)
+	ApplyAuth(req, c.Auth)
 
-	res, err := conn.HTTP.Do(req)
+	res, err := c.HTTP.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("post RPC: %w", err)
 	}

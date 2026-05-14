@@ -95,8 +95,8 @@ func (c *SSHConn) PostRPCStreamBody(ctx context.Context, service string, body io
 	stdout, err := discardSSHAdvertisement(cmd.Stdout)
 	if err != nil {
 		_ = cmd.Stdout.Close()
-		_ = cmd.wait()
-		return nil, fmt.Errorf("%s advertisement: %w", service, stderr.wrap(err))
+		waitErr := cmd.wait()
+		return nil, fmt.Errorf("%s advertisement: %w", service, errors.Join(stderr.wrap(err), waitErr))
 	}
 	return &sshRPCStream{
 		ctx:     ctx,
@@ -148,7 +148,7 @@ func sshInvocationArgs(ep *url.URL, service string, gitProtocol string) ([]strin
 
 func sshDestination(ep *url.URL) (string, error) {
 	if ep == nil || ep.Hostname() == "" {
-		return "", fmt.Errorf("missing SSH host")
+		return "", errors.New("missing SSH host")
 	}
 	host := ep.Hostname()
 	if ep.User != nil && ep.User.Username() != "" {
@@ -159,7 +159,7 @@ func sshDestination(ep *url.URL) (string, error) {
 
 func sshRemoteCommand(ep *url.URL, service string, gitProtocol string) (string, error) {
 	if ep == nil || ep.Path == "" {
-		return "", fmt.Errorf("missing SSH repository path")
+		return "", errors.New("missing SSH repository path")
 	}
 	path := shellQuotePath(ep.Path)
 	if gitProtocol != "" {
@@ -193,7 +193,12 @@ type sshCommand struct {
 	Stdout io.ReadCloser
 }
 
-func (c *sshCommand) wait() error { return c.Cmd.Wait() }
+func (c *sshCommand) wait() error {
+	if err := c.Cmd.Wait(); err != nil {
+		return fmt.Errorf("wait for ssh command: %w", err)
+	}
+	return nil
+}
 
 func discardSSHAdvertisement(stdout io.ReadCloser) (io.ReadCloser, error) {
 	buffered := bufio.NewReader(stdout)
@@ -202,7 +207,7 @@ func discardSSHAdvertisement(stdout io.ReadCloser) (io.ReadCloser, error) {
 		if errors.Is(err, io.EOF) {
 			return &bufferedReadCloser{Reader: buffered, Closer: stdout}, nil
 		}
-		return nil, err
+		return nil, fmt.Errorf("peek SSH advertisement: %w", err)
 	}
 	if !looksLikePktlineHeader(header) {
 		return &bufferedReadCloser{Reader: buffered, Closer: stdout}, nil
@@ -251,7 +256,8 @@ type bufferedReadCloser struct {
 }
 
 func (s *sshRPCStream) Read(p []byte) (int, error) {
-	return s.stdout.Read(p)
+	n, err := s.stdout.Read(p)
+	return n, err //nolint:wrapcheck // io.Reader contract requires forwarding EOF and stream errors as-is
 }
 
 func (s *sshRPCStream) Close() error {
@@ -284,7 +290,7 @@ type sshCommandError struct {
 func (e *sshCommandError) Write(p []byte) (int, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	return e.buf.Write(p)
+	return e.buf.Write(p) //nolint:wrapcheck // io.Writer implementation forwards buffer write errors verbatim
 }
 
 func (e *sshCommandError) String() string {
