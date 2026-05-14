@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 
+	"entire.io/entire/git-sync/internal/gitproto"
 	bstrap "entire.io/entire/git-sync/internal/strategy/bootstrap"
 )
 
@@ -219,7 +220,11 @@ func TestNewHTTPConn_PropagatesFollowInfoRefsRedirect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new conn (off): %v", err)
 	}
-	if off.FollowInfoRefsRedirect {
+	offHTTP, ok := off.(*gitproto.HTTPConn)
+	if !ok {
+		t.Fatalf("expected *gitproto.HTTPConn, got %T", off)
+	}
+	if offHTTP.FollowInfoRefsRedirect {
 		t.Error("FollowInfoRefsRedirect should default to false")
 	}
 
@@ -227,7 +232,37 @@ func TestNewHTTPConn_PropagatesFollowInfoRefsRedirect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new conn (on): %v", err)
 	}
-	if !on.FollowInfoRefsRedirect {
+	onHTTP, ok := on.(*gitproto.HTTPConn)
+	if !ok {
+		t.Fatalf("expected *gitproto.HTTPConn, got %T", on)
+	}
+	if !onHTTP.FollowInfoRefsRedirect {
 		t.Error("FollowInfoRefsRedirect was not propagated from Endpoint to Conn")
+	}
+}
+
+func TestNewConnBuildsSSHTransport(t *testing.T) {
+	orig := gitproto.SSHLookPath
+	t.Cleanup(func() { gitproto.SSHLookPath = orig })
+	gitproto.SSHLookPath = func(string) (string, error) {
+		return "/usr/bin/ssh", nil
+	}
+
+	stats := newStats(false)
+	tests := []string{
+		"ssh://example.com/repo.git",
+		"git+ssh://example.com/repo.git",
+		"git@example.com:repo.git",
+	}
+	for _, raw := range tests {
+		t.Run(raw, func(t *testing.T) {
+			conn, err := newConn(Endpoint{URL: raw}, "source", stats, nil)
+			if err != nil {
+				t.Fatalf("new conn: %v", err)
+			}
+			if _, ok := conn.(*gitproto.SSHConn); !ok {
+				t.Fatalf("expected *gitproto.SSHConn, got %T", conn)
+			}
+		})
 	}
 }
