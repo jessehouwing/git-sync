@@ -1,6 +1,10 @@
 #!/bin/sh
 #MISE description="go mod tidy"
 
+set -eu
+
+export GOCACHE="${GOCACHE:-/tmp/go-build}"
+
 go mod tidy
 
 # Check and fail if there are differences with committed files:

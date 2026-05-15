@@ -3,6 +3,7 @@ package syncer
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"math/rand"
 	"os"
@@ -52,7 +53,7 @@ func TestRun_SSHDockerSync(t *testing.T) {
 	runGit(t, worktree, "push", "origin", "HEAD:refs/heads/"+testBranch)
 
 	keyPath := filepath.Join(root, "id_ed25519")
-	runCommand(t, root, nil, "ssh-keygen", "-t", "ed25519", "-N", "", "-f", keyPath)
+	runCommand(t, root, "ssh-keygen", "-t", "ed25519", "-N", "", "-f", keyPath)
 	pubKey, err := os.ReadFile(keyPath + ".pub")
 	if err != nil {
 		t.Fatalf("read public key: %v", err)
@@ -63,26 +64,30 @@ func TestRun_SSHDockerSync(t *testing.T) {
 	writeSSHServerDockerContext(t, imageCtx)
 
 	imageTag := fmt.Sprintf("git-sync-ssh-e2e:%d", rand.New(rand.NewSource(time.Now().UnixNano())).Int63())
-	runCommand(t, imageCtx, nil, "docker", "build", "-t", imageTag, ".")
+	runCommand(t, imageCtx, "docker", "build", "-t", imageTag, ".")
 	t.Cleanup(func() {
-		_ = runCommandBestEffort(root, nil, "docker", "image", "rm", "-f", imageTag)
+		if err := runCommandBestEffort(t.Context(), root, "docker", "image", "rm", "-f", imageTag); err != nil {
+			t.Logf("cleanup docker image: %v", err)
+		}
 	})
 
-	containerID := strings.TrimSpace(runCommand(t, root, nil,
+	containerID := strings.TrimSpace(runCommand(t, root,
 		"docker", "run", "-d",
 		"-e", "AUTHORIZED_KEY_B64="+pubKeyB64,
 		"-P",
 		imageTag,
 	))
 	t.Cleanup(func() {
-		_ = runCommandBestEffort(root, nil, "docker", "rm", "-f", containerID)
+		if err := runCommandBestEffort(t.Context(), root, "docker", "rm", "-f", containerID); err != nil {
+			t.Logf("cleanup docker container: %v", err)
+		}
 	})
 
-	runCommand(t, root, nil, "docker", "cp", sourceBare, containerID+":/srv/git/source.git")
-	runCommand(t, root, nil, "docker", "cp", targetBare, containerID+":/srv/git/target.git")
-	runCommand(t, root, nil, "docker", "exec", containerID, "chown", "-R", "git:git", "/srv/git")
+	runCommand(t, root, "docker", "cp", sourceBare, containerID+":/srv/git/source.git")
+	runCommand(t, root, "docker", "cp", targetBare, containerID+":/srv/git/target.git")
+	runCommand(t, root, "docker", "exec", containerID, "chown", "-R", "git:git", "/srv/git")
 
-	portOutput := strings.TrimSpace(runCommandWithDiagnostics(t, root, nil, containerID,
+	portOutput := strings.TrimSpace(runCommandWithDiagnostics(t, root, containerID,
 		"docker", "port", containerID, "22/tcp",
 	))
 	port, err := parseDockerPort(portOutput)
@@ -143,7 +148,7 @@ func TestRun_SSHDockerSync(t *testing.T) {
 	}
 
 	syncedTargetBare := filepath.Join(root, "synced-target.git")
-	runCommand(t, root, nil, "docker", "cp", containerID+":/srv/git/target.git", syncedTargetBare)
+	runCommand(t, root, "docker", "cp", containerID+":/srv/git/target.git", syncedTargetBare)
 	assertGitRefEqual(t, sourceBare, syncedTargetBare, plumbing.NewBranchReferenceName(testBranch))
 }
 
@@ -199,14 +204,7 @@ func writeSSHServerDockerContext(t *testing.T, dir string) {
 
 func dockerBindMountTempDir(t *testing.T) string {
 	t.Helper()
-
-	if root, err := os.MkdirTemp("/private/tmp", "gitsync-ssh-docker-*"); err == nil {
-		t.Cleanup(func() { _ = os.RemoveAll(root) })
-		return root
-	}
-
-	root := t.TempDir()
-	return root
+	return t.TempDir()
 }
 
 func waitForSSHReady(t *testing.T, sshPath string, containerID string) {
@@ -216,25 +214,23 @@ func waitForSSHReady(t *testing.T, sshPath string, containerID string) {
 	var lastErr error
 	for time.Now().Before(deadline) {
 		cmd := exec.CommandContext(t.Context(), sshPath, "gitsync-ssh-docker", "true")
-		if output, err := cmd.CombinedOutput(); err == nil {
-			_ = output
+		output, err := cmd.CombinedOutput()
+		if err == nil {
 			return
-		} else {
-			lastErr = fmt.Errorf("%w: %s", err, strings.TrimSpace(string(output)))
 		}
+		lastErr = fmt.Errorf("%w: %s", err, strings.TrimSpace(string(output)))
 		time.Sleep(200 * time.Millisecond)
 	}
-	state := strings.TrimSpace(runCommandBestEffortOutput("", nil, "docker", "ps", "-a", "--filter", "id="+containerID, "--format", "{{.Status}}"))
-	logs := strings.TrimSpace(runCommandBestEffortOutput("", nil, "docker", "logs", containerID))
+	state := strings.TrimSpace(dockerCommandBestEffortOutput(t.Context(), "", "ps", "-a", "--filter", "id="+containerID, "--format", "{{.Status}}"))
+	logs := strings.TrimSpace(dockerCommandBestEffortOutput(t.Context(), "", "logs", containerID))
 	t.Fatalf("ssh server did not become ready: %v\ncontainer-status: %s\ncontainer-logs:\n%s", lastErr, state, logs)
 }
 
-func runCommand(t *testing.T, dir string, env map[string]string, name string, args ...string) string {
+func runCommand(t *testing.T, dir string, name string, args ...string) string {
 	t.Helper()
 
 	cmd := exec.CommandContext(t.Context(), name, args...)
 	cmd.Dir = dir
-	cmd.Env = commandEnv(env)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("%s %s failed: %v\n%s", name, strings.Join(args, " "), err, output)
@@ -242,25 +238,23 @@ func runCommand(t *testing.T, dir string, env map[string]string, name string, ar
 	return string(output)
 }
 
-func runCommandWithDiagnostics(t *testing.T, dir string, env map[string]string, containerID string, name string, args ...string) string {
+func runCommandWithDiagnostics(t *testing.T, dir string, containerID string, name string, args ...string) string {
 	t.Helper()
 
 	cmd := exec.CommandContext(t.Context(), name, args...)
 	cmd.Dir = dir
-	cmd.Env = commandEnv(env)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		state := strings.TrimSpace(runCommandBestEffortOutput(dir, env, "docker", "ps", "-a", "--filter", "id="+containerID, "--format", "{{.Status}}"))
-		logs := strings.TrimSpace(runCommandBestEffortOutput(dir, env, "docker", "logs", containerID))
+		state := strings.TrimSpace(dockerCommandBestEffortOutput(t.Context(), dir, "ps", "-a", "--filter", "id="+containerID, "--format", "{{.Status}}"))
+		logs := strings.TrimSpace(dockerCommandBestEffortOutput(t.Context(), dir, "logs", containerID))
 		t.Fatalf("%s %s failed: %v\n%s\ncontainer-status: %s\ncontainer-logs:\n%s", name, strings.Join(args, " "), err, output, state, logs)
 	}
 	return string(output)
 }
 
-func runCommandBestEffort(dir string, env map[string]string, name string, args ...string) error {
-	cmd := exec.Command(name, args...)
+func runCommandBestEffort(ctx context.Context, dir string, name string, args ...string) error {
+	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
-	cmd.Env = commandEnv(env)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%s %s failed: %w\n%s", name, strings.Join(args, " "), err, output)
@@ -268,18 +262,20 @@ func runCommandBestEffort(dir string, env map[string]string, name string, args .
 	return nil
 }
 
-func runCommandBestEffortOutput(dir string, env map[string]string, name string, args ...string) string {
-	cmd := exec.Command(name, args...)
+func dockerCommandBestEffortOutput(ctx context.Context, dir string, args ...string) string {
+	cmd := exec.CommandContext(ctx, "docker", args...)
 	cmd.Dir = dir
-	cmd.Env = commandEnv(env)
-	output, _ := cmd.CombinedOutput()
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return string(output)
+	}
 	return string(output)
 }
 
 func parseDockerPort(s string) (string, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
-		return "", fmt.Errorf("empty port mapping")
+		return "", errors.New("empty port mapping")
 	}
 
 	if newline := strings.IndexByte(s, '\n'); newline >= 0 {
@@ -288,30 +284,11 @@ func parseDockerPort(s string) (string, error) {
 
 	idx := strings.LastIndexByte(s, ':')
 	if idx < 0 {
-		return "", fmt.Errorf("missing host port separator")
+		return "", errors.New("missing host port separator")
 	}
 	port := strings.TrimSpace(s[idx+1:])
 	if port == "" {
-		return "", fmt.Errorf("empty host port")
+		return "", errors.New("empty host port")
 	}
 	return port, nil
-}
-
-func commandEnv(overrides map[string]string) []string {
-	env := append([]string(nil), os.Environ()...)
-	for key, value := range overrides {
-		prefix := key + "="
-		replaced := false
-		for i, entry := range env {
-			if strings.HasPrefix(entry, prefix) {
-				env[i] = prefix + value
-				replaced = true
-				break
-			}
-		}
-		if !replaced {
-			env = append(env, prefix+value)
-		}
-	}
-	return env
 }
