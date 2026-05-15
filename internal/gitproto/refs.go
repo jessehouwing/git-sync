@@ -46,6 +46,9 @@ func ListSourceRefs(ctx context.Context, conn Conn, protocolMode string, refPref
 	case "auto", "v2":
 		data, err := RequestInfoRefs(ctx, conn, transport.UploadPackService, "version=2")
 		if err != nil {
+			if protocolMode == "auto" && shouldFallbackToV1AfterV2ProbeError(conn, err) {
+				return listSourceRefsAutoV1(ctx, conn)
+			}
 			return nil, nil, err
 		}
 		if caps, err := DecodeV2Capabilities(bytes.NewReader(data)); err == nil {
@@ -75,6 +78,30 @@ func ListSourceRefs(ctx context.Context, conn Conn, protocolMode string, refPref
 	default:
 		return nil, nil, fmt.Errorf("unsupported protocol mode %q", protocolMode)
 	}
+}
+
+func listSourceRefsAutoV1(ctx context.Context, conn Conn) ([]*plumbing.Reference, *RefService, error) {
+	adv, refs, err := listSourceRefsV1(ctx, conn)
+	if err != nil {
+		return nil, nil, err
+	}
+	return refs, &RefService{Protocol: "v1", V1Adv: adv, HeadTarget: headTargetFromAdv(adv)}, nil
+}
+
+func shouldFallbackToV1AfterV2ProbeError(conn Conn, err error) bool {
+	if conn == nil || conn.Endpoint() == nil {
+		return false
+	}
+	switch conn.Endpoint().Scheme {
+	case "ssh", "git+ssh":
+	default:
+		return false
+	}
+
+	msg := err.Error()
+	return strings.Contains(msg, "Invalid command:") &&
+		strings.Contains(msg, "GIT_PROTOCOL='version=2'") &&
+		strings.Contains(msg, "git-upload-pack")
 }
 
 // AdvertisedRefsV1 fetches and decodes v1 advertised refs for the given service.

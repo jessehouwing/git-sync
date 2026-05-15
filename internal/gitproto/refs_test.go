@@ -3,6 +3,8 @@ package gitproto
 import (
 	"context"
 	"errors"
+	"io"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -200,3 +202,74 @@ func TestListSourceRefsUnsupportedProtocol(t *testing.T) {
 		t.Fatal("expected error for unsupported protocol mode")
 	}
 }
+
+func TestListSourceRefsAutoFallsBackToV1AfterSSHV2ProbeCommandRejection(t *testing.T) {
+	t.Parallel()
+
+	conn := &stubConn{
+		reqInfoRefs: func(_ context.Context, _ string, gitProtocol string) ([]byte, error) {
+			if gitProtocol == "version=2" {
+				return nil, errors.New("request info refs: git-upload-pack info-refs: wait for ssh command: exit status 1: Invalid command: GIT_PROTOCOL='version=2' git-upload-pack 'entireio/cli.git'")
+			}
+
+			var body strings.Builder
+			if _, err := pktline.Writef(&body, "# service=%s\n", transport.UploadPackService); err != nil {
+				t.Fatalf("write smart service line: %v", err)
+			}
+			if err := pktline.WriteFlush(&body); err != nil {
+				t.Fatalf("write smart flush: %v", err)
+			}
+			if _, err := pktline.Writef(&body, "%s HEAD\x00%s\n", strings.Repeat("a", 40), capability.SymRef+"=HEAD:refs/heads/main"); err != nil {
+				t.Fatalf("write advertised head: %v", err)
+			}
+			if _, err := pktline.Writef(&body, "%s refs/heads/main\n", strings.Repeat("a", 40)); err != nil {
+				t.Fatalf("write advertised ref: %v", err)
+			}
+			if err := pktline.WriteFlush(&body); err != nil {
+				t.Fatalf("write trailing flush: %v", err)
+			}
+			return []byte(body.String()), nil
+		},
+	}
+
+	refs, svc, err := ListSourceRefs(t.Context(), conn, "auto", nil)
+	if err != nil {
+		t.Fatalf("ListSourceRefs(auto) error = %v", err)
+	}
+	if svc.Protocol != "v1" {
+		t.Fatalf("protocol = %q, want v1", svc.Protocol)
+	}
+	if got := svc.HeadTarget.String(); got != "refs/heads/main" {
+		t.Fatalf("head target = %q, want refs/heads/main", got)
+	}
+	foundMain := false
+	for _, ref := range refs {
+		if ref.Name().String() == "refs/heads/main" {
+			foundMain = true
+			break
+		}
+	}
+	if !foundMain {
+		t.Fatalf("refs = %#v, want refs/heads/main to be advertised", refs)
+	}
+}
+
+type stubConn struct {
+	reqInfoRefs func(ctx context.Context, service string, gitProtocol string) ([]byte, error)
+}
+
+func (s *stubConn) RequestInfoRefs(ctx context.Context, service string, gitProtocol string) ([]byte, error) {
+	return s.reqInfoRefs(ctx, service, gitProtocol)
+}
+
+func (s *stubConn) PostRPCStreamBody(context.Context, string, io.Reader, bool, string) (io.ReadCloser, error) {
+	return nil, errors.New("unexpected PostRPCStreamBody call")
+}
+
+func (s *stubConn) Endpoint() *url.URL { return &url.URL{Scheme: "ssh", Host: "github.com"} }
+
+func (s *stubConn) ProgressWriter() io.Writer { return nil }
+
+func (s *stubConn) SetProgressWriter(io.Writer) {}
+
+func (s *stubConn) Close() error { return nil }
