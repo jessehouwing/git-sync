@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] - 2026-05-18
+
+### Added
+
+- SSH transport: `ssh://`, SCP-style `git@host:path.git`, and `git+ssh://` remotes via the local `ssh` binary, with one process per logical RPC so v2 and batched flows work correctly. SSH config-driven user/key behavior is honored, and a clear error is raised when `ssh` is not on `PATH` ([#54](https://github.com/entireio/git-sync/pull/54), [#56](https://github.com/entireio/git-sync/pull/56))
+- `--all-refs` for mirroring arbitrary `refs/*` namespaces (notes, pulls, custom) beyond `refs/heads/*` and `refs/tags/*`. For `sync` and `bootstrap` it bundles a best-effort failure mode that downgrades per-ref `receive-pack` rejections to warnings (surfaced via `Result.Warned` and JSON `warned`), so mirroring into hosts with hidden refs like GitHub `refs/pull/*` works. `replicate` keeps strict semantics. Library exposes `RefScope.AllRefs`, `SyncPolicy.BestEffort`, `RefKindOther`, and `ActionWarn` ([#44](https://github.com/entireio/git-sync/pull/44))
+- Bootstrap pushes the source `HEAD`'s branch first, so hosts that pick the default branch from the first push on a fresh repo (GitHub, GitLab) end up with the right default automatically. The source `HEAD` symref is also surfaced on `Result` and `ProbeResult` (`execution.sourceHead` / `sourceHead` in JSON) ([#51](https://github.com/entireio/git-sync/pull/51))
+
+### Changed
+
+- `--force` is replaced by two explicit flags: `--force-with-lease` (previous lease-protected behavior) and `--force-blind` (zero expected-old, overwrite regardless — matches `git push --force`). The flags are mutually exclusive; legacy `--force` errors out with a migration hint. `bootstrap` and `replicate` continue to reject force flags entirely. `SyncPolicy.Force` splits into `ForceWithLease` and `ForceBlind`. Lease-failure `ng` responses from `receive-pack` are annotated with a rerun-or-`--force-blind` hint ([#53](https://github.com/entireio/git-sync/pull/53))
+- `replicate` failure messages no longer suggest "use sync instead" for errors that aren't relay-capability problems (network, cancellation, etc.) ([#52](https://github.com/entireio/git-sync/pull/52))
+
+### Fixed
+
+- v1 target pushes against repos with annotated tags no longer fail with `HTTP 400 invalid reference name: refs/tags/<X>^{}`. `AdvRefsToSlice` now drops peeled `^{}` entries that go-git v6 alpha.3 preserves inline; affected `replicate` always and `sync --prune` ([#57](https://github.com/entireio/git-sync/pull/57))
+
+### Housekeeping
+
+- Bump go-git to v6.0.0-alpha.3 ([#49](https://github.com/entireio/git-sync/pull/49), [#55](https://github.com/entireio/git-sync/pull/55))
+
 ## [0.4.3] - 2026-05-07
 
 ### Added
