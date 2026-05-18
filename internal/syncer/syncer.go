@@ -662,7 +662,7 @@ func newSession(ctx context.Context, cfg Config, needTarget bool) (*syncSession,
 		if out == nil {
 			out = os.Stderr
 		}
-		fmt.Fprintln(out, warning)
+		_, _ = fmt.Fprintln(out, warning)
 	}
 	if cfg.Verbose {
 		s.logger = slog.New(slog.NewTextHandler(&sessionStderr{s: s}, &slog.HandlerOptions{

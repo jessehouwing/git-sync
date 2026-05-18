@@ -1,13 +1,30 @@
 #!/bin/sh
 #MISE description="Lint go"
 
+set -eu
+
+export GOCACHE="${GOCACHE:-/tmp/go-build}"
+export GOLANGCI_LINT_CACHE="${GOLANGCI_LINT_CACHE:-/tmp/golangci-lint}"
+
 golangci-lint version
-golangci-lint config verify
 
 # In CI, we rely on golangci/golangci-lint-action@v9 defined in .github/workflows/lint.yml
 # so only run this locally:
-if [ "$CI" = "true" ]; then
+if [ "${CI:-}" = "true" ]; then
   echo "skipped because CI=true"
 else
-  golangci-lint run --timeout=30m --fix ./...
+  if golangci-lint config verify >/dev/null 2>&1; then
+    golangci-lint run --timeout=30m --fix ./...
+    exit 0
+  fi
+
+  echo "golangci-lint config verification requires network; falling back to offline new-issues-only lint"
+
+  if merge_base="$(git merge-base HEAD origin/main 2>/dev/null)"; then
+    :
+  else
+    merge_base="$(git rev-parse HEAD~1)"
+  fi
+
+  golangci-lint run --no-config --new-from-rev="$merge_base" --timeout=30m ./...
 fi

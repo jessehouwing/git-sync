@@ -32,6 +32,16 @@ env GOCACHE=/tmp/go-build GITSYNC_E2E_GIT_HTTP_BACKEND=1 go test ./internal/sync
 
 That test uses a real `git-http-backend` source/target pair and checks that a smaller `--target-max-pack-bytes` planning limit produces at least as many planned checkpoints as a larger one, while still planning to the branch tip.
 
+## Docker SSH End-To-End Test
+
+Optional end-to-end sync against a real `sshd` running in Docker:
+
+```bash
+env GOCACHE=/tmp/go-build GITSYNC_E2E_SSH_DOCKER=1 go test ./internal/syncer -run TestRun_SSHDockerSync -v
+```
+
+That path builds a disposable Docker image with `openssh-server` and `git`, mounts local bare source/target repositories into the container, configures a temporary SSH keypair plus an isolated SSH config passed via a wrapper `ssh` binary, and runs a real SSH-based sync through `git-upload-pack` / `git-receive-pack`.
+
 ## Live Linux Smokes
 
 Optional live Linux bootstrap smoke:
@@ -79,6 +89,7 @@ Use `--keep-targets` to retain generated bare targets under `--work-dir` for ins
 - `mise run test` — default suite
 - `mise run test:ci` — default suite with race detection
 - `mise run test:git-http-backend` — `git-http-backend` end-to-end
+- `mise run test:ssh-docker` — Docker-based SSH end-to-end
 - `mise run test:linux-smoke` — live Linux bootstrap smoke
 - `mise run test:linux-smoke:batched` — live Linux batched bootstrap smoke
 
