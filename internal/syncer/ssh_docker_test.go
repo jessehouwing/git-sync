@@ -66,7 +66,9 @@ func TestRun_SSHDockerSync(t *testing.T) {
 	imageTag := fmt.Sprintf("git-sync-ssh-e2e:%d", rand.New(rand.NewSource(time.Now().UnixNano())).Int63())
 	runCommand(t, imageCtx, "docker", "build", "-t", imageTag, ".")
 	t.Cleanup(func() {
-		if err := runCommandBestEffort(t.Context(), root, "docker", "image", "rm", "-f", imageTag); err != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := runCommandBestEffort(ctx, root, "docker", "image", "rm", "-f", imageTag); err != nil {
 			t.Logf("cleanup docker image: %v", err)
 		}
 	})
@@ -78,7 +80,9 @@ func TestRun_SSHDockerSync(t *testing.T) {
 		imageTag,
 	))
 	t.Cleanup(func() {
-		if err := runCommandBestEffort(t.Context(), root, "docker", "rm", "-f", containerID); err != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := runCommandBestEffort(ctx, root, "docker", "rm", "-f", containerID); err != nil {
 			t.Logf("cleanup docker container: %v", err)
 		}
 	})
