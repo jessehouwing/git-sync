@@ -87,12 +87,25 @@ func AdvertisedRefsV1(ctx context.Context, conn *Conn, service string) (*packp.A
 }
 
 // AdvRefsToSlice converts an AdvRefs to a slice of references.
+//
+// Peeled tag entries (names ending in "^{}") are dropped: they are
+// wire-protocol metadata exposing the commit a tag points to, not real refs.
+// Including them in target ref maps causes the planner to schedule a delete
+// for a non-existent ref, which receive-pack rejects with HTTP 400
+// "invalid reference name".
 func AdvRefsToSlice(ar *packp.AdvRefs) ([]*plumbing.Reference, error) {
 	refs, err := ar.ResolvedReferences()
 	if err != nil {
 		return nil, fmt.Errorf("resolved references: %w", err)
 	}
-	return refs, nil
+	out := refs[:0]
+	for _, ref := range refs {
+		if ref.Name().IsPeeled() {
+			continue
+		}
+		out = append(out, ref)
+	}
+	return out, nil
 }
 
 // AdvRefsCaps returns the sorted capability list from an AdvRefs.

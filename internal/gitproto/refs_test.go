@@ -130,6 +130,31 @@ func TestAdvRefsToSlice(t *testing.T) {
 	}
 }
 
+// Regression: v1 advertisements include peeled "^{}" entries for annotated tags
+// to expose the commit the tag points at. They are wire-protocol metadata, not
+// real refs — receive-pack rejects them with "invalid reference name" when the
+// planner schedules a delete for one. AdvRefsToSlice must drop them.
+func TestAdvRefsToSliceDropsPeeledTagEntries(t *testing.T) {
+	adv := &packp.AdvRefs{}
+	tagHash := plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	commitHash := plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+	adv.References = []*plumbing.Reference{
+		plumbing.NewHashReference("refs/tags/v1", tagHash),
+		plumbing.NewHashReference("refs/tags/v1^{}", commitHash),
+	}
+
+	refs, err := AdvRefsToSlice(adv)
+	if err != nil {
+		t.Fatalf("AdvRefsToSlice: %v", err)
+	}
+	if len(refs) != 1 {
+		t.Fatalf("expected 1 ref after peeled drop, got %d: %v", len(refs), refs)
+	}
+	if refs[0].Name() != "refs/tags/v1" {
+		t.Errorf("got %s, want refs/tags/v1", refs[0].Name())
+	}
+}
+
 func TestDecodeV1AdvRefs(t *testing.T) {
 	// Empty data should return ErrEmptyRemoteRepository.
 	_, err := decodeV1AdvRefs(nil)
