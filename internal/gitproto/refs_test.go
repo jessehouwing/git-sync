@@ -20,9 +20,9 @@ func TestRefHashMap(t *testing.T) {
 	hashB := plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
 
 	refs := []*plumbing.Reference{
-		plumbing.NewHashReference("refs/heads/main", hashA),
+		plumbing.NewHashReference(refsHeadsMain, hashA),
 		plumbing.NewHashReference("refs/heads/dev", hashB),
-		plumbing.NewSymbolicReference("HEAD", "refs/heads/main"), // symbolic, should be skipped
+		plumbing.NewSymbolicReference("HEAD", refsHeadsMain), // symbolic, should be skipped
 	}
 
 	m := RefHashMap(refs)
@@ -30,7 +30,7 @@ func TestRefHashMap(t *testing.T) {
 	if len(m) != 2 {
 		t.Fatalf("expected 2 entries, got %d", len(m))
 	}
-	if got := m["refs/heads/main"]; got != hashA {
+	if got := m[refsHeadsMain]; got != hashA {
 		t.Errorf("refs/heads/main = %s, want %s", got, hashA)
 	}
 	if got := m["refs/heads/dev"]; got != hashB {
@@ -52,7 +52,7 @@ func TestHeadTargetFromAdv(t *testing.T) {
 
 	adv := &packp.AdvRefs{}
 	adv.Capabilities.Add(capability.SymRef, "HEAD:refs/heads/main")
-	if got := headTargetFromAdv(adv); got.String() != "refs/heads/main" {
+	if got := headTargetFromAdv(adv); got.String() != refsHeadsMain {
 		t.Errorf("headTargetFromAdv = %q, want refs/heads/main", got)
 	}
 
@@ -108,7 +108,7 @@ func TestAdvRefsToSlice(t *testing.T) {
 	hashA := plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 	hashB := plumbing.NewHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
 	adv.References = []*plumbing.Reference{
-		plumbing.NewHashReference("refs/heads/main", hashA),
+		plumbing.NewHashReference(refsHeadsMain, hashA),
 		plumbing.NewHashReference("refs/heads/dev", hashB),
 	}
 
@@ -124,8 +124,8 @@ func TestAdvRefsToSlice(t *testing.T) {
 	for _, ref := range refs {
 		found[ref.Name()] = ref.Hash()
 	}
-	if found["refs/heads/main"] != hashA {
-		t.Errorf("refs/heads/main = %s, want %s", found["refs/heads/main"], hashA)
+	if found[refsHeadsMain] != hashA {
+		t.Errorf("refs/heads/main = %s, want %s", found[refsHeadsMain], hashA)
 	}
 	if found["refs/heads/dev"] != hashB {
 		t.Errorf("refs/heads/dev = %s, want %s", found["refs/heads/dev"], hashB)
@@ -239,12 +239,12 @@ func TestListSourceRefsAutoFallsBackToV1AfterSSHV2ProbeCommandRejection(t *testi
 	if svc.Protocol != "v1" {
 		t.Fatalf("protocol = %q, want v1", svc.Protocol)
 	}
-	if got := svc.HeadTarget.String(); got != "refs/heads/main" {
+	if got := svc.HeadTarget.String(); got != refsHeadsMain {
 		t.Fatalf("head target = %q, want refs/heads/main", got)
 	}
 	foundMain := false
 	for _, ref := range refs {
-		if ref.Name().String() == "refs/heads/main" {
+		if ref.Name().String() == refsHeadsMain {
 			foundMain = true
 			break
 		}
