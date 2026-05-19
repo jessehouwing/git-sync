@@ -27,6 +27,8 @@ import (
 	"entire.io/entire/git-sync/internal/auth"
 	"entire.io/entire/git-sync/internal/convert"
 	"entire.io/entire/git-sync/internal/gitproto"
+	"entire.io/entire/git-sync/internal/lfs"
+	"entire.io/entire/git-sync/internal/lfs/lfsapi"
 	"entire.io/entire/git-sync/internal/planner"
 	bstrap "entire.io/entire/git-sync/internal/strategy/bootstrap"
 	"entire.io/entire/git-sync/internal/strategy/incremental"
@@ -88,6 +90,12 @@ type Config struct {
 	MaterializedMaxObjects int
 	ProtocolMode           string
 	BootstrapStrategy      string // "" | "first-parent" | "topo"
+
+	// LFS enables Git LFS object mirroring alongside the git pack transfer.
+	LFS bool
+	// LFSConcurrency controls the number of parallel LFS object transfers.
+	// Zero uses the default (4).
+	LFSConcurrency int
 
 	// progressOut overrides the writer used by the live progress ticker.
 	// Defaults to os.Stderr when nil. Exposed for tests.
@@ -152,6 +160,16 @@ type Result struct {
 	Stats              Stats                  `json:"stats"`
 	Measurement        Measurement            `json:"measurement"`
 	Protocol           string                 `json:"protocol"`
+	LFS                LFSStats               `json:"lfs,omitempty"`
+}
+
+// LFSStats holds the outcome of LFS object transfers during a sync.
+type LFSStats struct {
+	Objects          int   `json:"objects,omitempty"`
+	Transferred      int   `json:"transferred,omitempty"`
+	Skipped          int   `json:"skipped,omitempty"`
+	Errored          int   `json:"errored,omitempty"`
+	BytesTransferred int64 `json:"bytesTransferred,omitempty"`
 }
 
 func (r Result) Lines() []string {
@@ -177,6 +195,10 @@ func (r Result) Lines() []string {
 	}
 	if r.SourceHEAD != "" {
 		lines = append(lines, "source-head: "+r.SourceHEAD.String())
+	}
+	if r.LFS.Objects > 0 {
+		lines = append(lines, fmt.Sprintf("lfs: objects=%d transferred=%d skipped=%d errored=%d bytes=%d",
+			r.LFS.Objects, r.LFS.Transferred, r.LFS.Skipped, r.LFS.Errored, r.LFS.BytesTransferred))
 	}
 	return lines
 }
@@ -1297,4 +1319,61 @@ func countObjects(store storer.EncodedObjectStorer) (int, error) {
 		return 0, fmt.Errorf("count encoded objects: %w", err)
 	}
 	return count, nil
+}
+
+// syncLFS scans the given object store for LFS pointers and transfers
+// any missing LFS objects from source to target. It returns LFS transfer
+// stats. If LFS is not enabled in config, it returns zero stats.
+func (s *syncSession) syncLFS(ctx context.Context, store storer.EncodedObjectStorer) LFSStats {
+	if !s.cfg.LFS {
+		return LFSStats{}
+	}
+
+	pointers, err := lfs.ScanStore(store)
+	if err != nil {
+		slog.Warn("lfs: scan for pointer files failed", "err", err)
+		return LFSStats{}
+	}
+	if len(pointers) == 0 {
+		return LFSStats{}
+	}
+
+	sourceEndpoint := lfsapi.EndpointFromRepoURL(s.cfg.Source.URL)
+	targetEndpoint := lfsapi.EndpointFromRepoURL(s.cfg.Target.URL)
+
+	sourceAuth := lfsapi.Auth{
+		Username:    s.cfg.Source.Username,
+		Password:    s.cfg.Source.Token,
+		BearerToken: s.cfg.Source.BearerToken,
+	}
+	targetAuth := lfsapi.Auth{
+		Username:    s.cfg.Target.Username,
+		Password:    s.cfg.Target.Token,
+		BearerToken: s.cfg.Target.BearerToken,
+	}
+
+	httpClient := s.cfg.HTTPClient
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
+
+	stats, err := lfs.Sync(ctx, pointers, lfs.SyncOptions{
+		SourceEndpoint: sourceEndpoint,
+		TargetEndpoint: targetEndpoint,
+		SourceAuth:     sourceAuth,
+		TargetAuth:     targetAuth,
+		HTTPClient:     httpClient,
+		Concurrency:    s.cfg.LFSConcurrency,
+	})
+	if err != nil {
+		slog.Warn("lfs: sync failed", "err", err)
+	}
+
+	return LFSStats{
+		Objects:          stats.Objects,
+		Transferred:      stats.Transferred,
+		Skipped:          stats.Skipped,
+		Errored:          stats.Errored,
+		BytesTransferred: stats.BytesTransferred,
+	}
 }
