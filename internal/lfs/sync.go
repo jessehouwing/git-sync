@@ -162,12 +162,10 @@ func Sync(ctx context.Context, pointers []Pointer, opts SyncOptions) (SyncStats,
 	)
 
 	for _, job := range jobs {
-		if ctx.Err() != nil {
-			break
-		}
 		select {
 		case <-ctx.Done():
-			break
+			// Stop launching new jobs if context is cancelled
+			goto done
 		case sem <- struct{}{}:
 		}
 
@@ -188,11 +186,15 @@ func Sync(ctx context.Context, pointers []Pointer, opts SyncOptions) (SyncStats,
 			bytesTotal.Add(j.size)
 		}(job)
 	}
+done:
 	wg.Wait()
 
 	stats.Transferred = int(transferred.Load())
 	stats.BytesTransferred = bytesTotal.Load()
 	stats.Errored = preflightErrors + int(errored.Load())
+	if stats.Errored > 0 {
+		return stats, fmt.Errorf("lfs sync: %d object(s) failed to transfer", stats.Errored)
+	}
 	return stats, nil
 }
 

@@ -100,7 +100,9 @@ func TestSync_TransferOneObject(t *testing.T) {
 			return
 		}
 		// Serve the actual download.
-		_, _ = w.Write(content)
+		if _, err := w.Write(content); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 	}))
 	defer sourceServer.Close()
 	sourceURL = sourceServer.URL

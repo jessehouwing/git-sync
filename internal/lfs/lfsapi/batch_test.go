@@ -142,7 +142,9 @@ func TestBatchAuth(t *testing.T) {
 func TestBatchHTTPError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
-		_, _ = w.Write([]byte(`{"message":"access denied"}`))
+		if _, err := w.Write([]byte(`{"message":"access denied"}`)); err != nil {
+			t.Logf("write error response: %v", err)
+		}
 	}))
 	defer server.Close()
 

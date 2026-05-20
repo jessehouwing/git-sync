@@ -21,7 +21,9 @@ func TestDownload(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodGet, r.Method)
 		assert.Equal(t, "custom-value", r.Header.Get("X-Custom"))
-		_, _ = w.Write(content)
+		if _, err := w.Write(content); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 	}))
 	defer server.Close()
 
@@ -35,7 +37,9 @@ func TestDownload_OIDMismatch(t *testing.T) {
 	content := []byte("hello world lfs content")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write(content)
+		if _, err := w.Write(content); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 	}))
 	defer server.Close()
 
@@ -51,7 +55,9 @@ func TestDownload_SizeMismatch(t *testing.T) {
 	oid := hex.EncodeToString(hash[:])
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write(content)
+		if _, err := w.Write(content); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 	}))
 	defer server.Close()
 
