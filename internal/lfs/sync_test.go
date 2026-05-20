@@ -27,7 +27,10 @@ func TestSync_AllSkipped(t *testing.T) {
 	// Target says it already has the object (no upload action).
 	targetServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req lfsapi.BatchRequest
-		json.NewDecoder(r.Body).Decode(&req)
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 
 		resp := lfsapi.BatchResponse{
 			Objects: make([]lfsapi.ObjectResponse, len(req.Objects)),
@@ -40,7 +43,9 @@ func TestSync_AllSkipped(t *testing.T) {
 			}
 		}
 		w.Header().Set("Content-Type", lfsapi.MediaType)
-		json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 	}))
 	defer targetServer.Close()
 
@@ -73,7 +78,10 @@ func TestSync_TransferOneObject(t *testing.T) {
 	sourceServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/objects/batch" {
 			var req lfsapi.BatchRequest
-			json.NewDecoder(r.Body).Decode(&req)
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
 			resp := lfsapi.BatchResponse{
 				Objects: []lfsapi.ObjectResponse{
 					{
@@ -86,11 +94,13 @@ func TestSync_TransferOneObject(t *testing.T) {
 				},
 			}
 			w.Header().Set("Content-Type", lfsapi.MediaType)
-			json.NewEncoder(w).Encode(resp)
+			if err := json.NewEncoder(w).Encode(resp); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			}
 			return
 		}
 		// Serve the actual download.
-		w.Write(content)
+		_, _ = w.Write(content)
 	}))
 	defer sourceServer.Close()
 	sourceURL = sourceServer.URL
@@ -100,7 +110,10 @@ func TestSync_TransferOneObject(t *testing.T) {
 	targetServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/objects/batch" {
 			var req lfsapi.BatchRequest
-			json.NewDecoder(r.Body).Decode(&req)
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
 			resp := lfsapi.BatchResponse{
 				Objects: []lfsapi.ObjectResponse{
 					{
@@ -113,7 +126,9 @@ func TestSync_TransferOneObject(t *testing.T) {
 				},
 			}
 			w.Header().Set("Content-Type", lfsapi.MediaType)
-			json.NewEncoder(w).Encode(resp)
+			if err := json.NewEncoder(w).Encode(resp); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			}
 			return
 		}
 		// Accept uploads.
@@ -134,7 +149,7 @@ func TestSync_TransferOneObject(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 1, stats.Objects)
 	assert.Equal(t, 1, stats.Transferred)
-	assert.Equal(t, int64(size), stats.BytesTransferred)
+	assert.Equal(t, size, stats.BytesTransferred)
 	assert.Equal(t, int64(1), uploadCount.Load())
 }
 
@@ -144,7 +159,10 @@ func TestSync_DeduplicatesPointers(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		batchCalls.Add(1)
 		var req lfsapi.BatchRequest
-		json.NewDecoder(r.Body).Decode(&req)
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		// Return no upload actions (all skipped).
 		resp := lfsapi.BatchResponse{
 			Objects: make([]lfsapi.ObjectResponse, len(req.Objects)),
@@ -153,7 +171,9 @@ func TestSync_DeduplicatesPointers(t *testing.T) {
 			resp.Objects[i] = lfsapi.ObjectResponse{OID: obj.OID, Size: obj.Size}
 		}
 		w.Header().Set("Content-Type", lfsapi.MediaType)
-		json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 	}))
 	defer server.Close()
 

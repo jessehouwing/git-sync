@@ -6,6 +6,7 @@ package lfs
 import (
 	"bufio"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -37,7 +38,7 @@ func ParsePointer(r io.Reader) (Pointer, error) {
 
 	// First line must be the version header.
 	if !scanner.Scan() {
-		return Pointer{}, fmt.Errorf("lfs pointer: missing version line")
+		return Pointer{}, errors.New("lfs pointer: missing version line")
 	}
 	if strings.TrimSpace(scanner.Text()) != pointerVersionLine {
 		return Pointer{}, fmt.Errorf("lfs pointer: invalid version line: %q", scanner.Text())
@@ -89,10 +90,10 @@ func ParsePointer(r io.Reader) (Pointer, error) {
 	}
 
 	if !hasOID {
-		return Pointer{}, fmt.Errorf("lfs pointer: missing oid")
+		return Pointer{}, errors.New("lfs pointer: missing oid")
 	}
 	if !hasSize {
-		return Pointer{}, fmt.Errorf("lfs pointer: missing size")
+		return Pointer{}, errors.New("lfs pointer: missing size")
 	}
 
 	return Pointer{OID: oid, Size: size}, nil

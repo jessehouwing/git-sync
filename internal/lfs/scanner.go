@@ -16,7 +16,7 @@ import (
 func ScanStore(store storer.EncodedObjectStorer) ([]Pointer, error) {
 	iter, err := store.IterEncodedObjects(plumbing.BlobObject)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("lfs scanner: iterate objects: %w", err)
 	}
 	defer iter.Close()
 
@@ -29,7 +29,9 @@ func ScanStore(store storer.EncodedObjectStorer) ([]Pointer, error) {
 		reader, err := obj.Reader()
 		if err != nil {
 			readErrors++
-			slog.Warn("lfs scanner: failed to read blob", "hash", obj.Hash().String(), "err", err)
+			slog.Warn("lfs scanner: failed to read blob",
+				slog.String("hash", obj.Hash().String()),
+				slog.Any("err", err))
 			return nil
 		}
 		defer reader.Close()
@@ -43,7 +45,7 @@ func ScanStore(store storer.EncodedObjectStorer) ([]Pointer, error) {
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("lfs scanner: iterate blobs: %w", err)
 	}
 	if readErrors > 0 {
 		return pointers, fmt.Errorf("lfs scanner: %d blob(s) could not be read (scan may be incomplete)", readErrors)

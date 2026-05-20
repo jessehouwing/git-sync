@@ -119,7 +119,10 @@ func Sync(ctx context.Context, pointers []Pointer, opts SyncOptions) (SyncStats,
 		obj := &uploadResp[i]
 		// Handle per-object errors from the batch response.
 		if obj.Error != nil {
-			slog.Warn("lfs sync: target batch error for object", "oid", obj.OID, "code", obj.Error.Code, "message", obj.Error.Message)
+			slog.Warn("lfs sync: target batch error for object",
+				slog.String("oid", obj.OID),
+				slog.Int("code", obj.Error.Code),
+				slog.String("message", obj.Error.Message))
 			preflightErrors++
 			continue
 		}
@@ -132,7 +135,8 @@ func Sync(ctx context.Context, pointers []Pointer, opts SyncOptions) (SyncStats,
 		}
 		dl, ok := downloadLinks[obj.OID]
 		if !ok {
-			slog.Warn("lfs sync: no download link for object", "oid", obj.OID)
+			slog.Warn("lfs sync: no download link for object",
+				slog.String("oid", obj.OID))
 			preflightErrors++
 			continue
 		}
@@ -158,6 +162,9 @@ func Sync(ctx context.Context, pointers []Pointer, opts SyncOptions) (SyncStats,
 	)
 
 	for _, job := range jobs {
+		if ctx.Err() != nil {
+			break
+		}
 		select {
 		case <-ctx.Done():
 			break
@@ -171,7 +178,9 @@ func Sync(ctx context.Context, pointers []Pointer, opts SyncOptions) (SyncStats,
 
 			err := streamObject(ctx, httpClient, j.oid, j.size, j.download, j.upload, j.verify)
 			if err != nil {
-				slog.Warn("lfs sync: transfer failed", "oid", j.oid, "err", err)
+				slog.Warn("lfs sync: transfer failed",
+					slog.String("oid", j.oid),
+					slog.Any("err", err))
 				errored.Add(1)
 				return
 			}
@@ -270,7 +279,7 @@ func batchAll(ctx context.Context, client *lfsapi.Client, specs []lfsapi.ObjectS
 			Objects:   chunk,
 		})
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("lfs sync: batch request: %w", err)
 		}
 		all = append(all, resp.Objects...)
 	}

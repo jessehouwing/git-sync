@@ -82,7 +82,10 @@ func Upload(ctx context.Context, httpClient *http.Client, href string, headers m
 		return fmt.Errorf("lfs upload: HTTP %d for %s", resp.StatusCode, href)
 	}
 	// Drain body to allow connection reuse.
-	_, _ = io.Copy(io.Discard, resp.Body)
+	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+		// Log but don't fail since upload succeeded
+		_ = err
+	}
 	return nil
 }
 
@@ -113,7 +116,10 @@ func Verify(ctx context.Context, httpClient *http.Client, href string, headers m
 		return fmt.Errorf("lfs verify: %w", err)
 	}
 	defer resp.Body.Close()
-	_, _ = io.Copy(io.Discard, resp.Body)
+	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+		// Log but don't fail if drain fails
+		_ = err
+	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("lfs verify: HTTP %d for %s", resp.StatusCode, href)

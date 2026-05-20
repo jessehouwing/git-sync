@@ -3,6 +3,7 @@ package lfsapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"os/exec"
@@ -56,11 +57,6 @@ func SSHAuthenticate(ctx context.Context, repoURL string, operation string) (*SS
 	}
 
 	path := ep.Path
-	if strings.HasPrefix(path, "/") {
-		// Absolute path stays as-is.
-	} else {
-		// Relative path (SCP-style) — keep it relative.
-	}
 
 	remoteCmd := "git-lfs-authenticate " + shellQuote(path) + " " + operation
 
@@ -73,7 +69,8 @@ func SSHAuthenticate(ctx context.Context, repoURL string, operation string) (*SS
 	cmd := exec.CommandContext(ctx, sshPath, args...)
 	output, err := cmd.Output()
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
 			stderr := strings.TrimSpace(string(exitErr.Stderr))
 			if stderr != "" {
 				return nil, fmt.Errorf("lfs ssh authenticate: %w: %s", err, stderr)
@@ -87,7 +84,7 @@ func SSHAuthenticate(ctx context.Context, repoURL string, operation string) (*SS
 		return nil, fmt.Errorf("lfs ssh authenticate: parse response: %w", err)
 	}
 	if endpoint.Href == "" {
-		return nil, fmt.Errorf("lfs ssh authenticate: empty href in response")
+		return nil, errors.New("lfs ssh authenticate: empty href in response")
 	}
 	return &endpoint, nil
 }
