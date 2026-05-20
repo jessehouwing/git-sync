@@ -34,6 +34,10 @@ type Auth struct {
 	Password string
 	// BearerToken for Bearer auth (takes precedence over Basic).
 	BearerToken string
+	// Header contains additional headers to set on each request.
+	// Used by SSH-based LFS authentication to pass through arbitrary
+	// auth headers from git-lfs-authenticate responses.
+	Header map[string]string
 }
 
 // NewClient creates an LFS batch API client.
@@ -108,6 +112,9 @@ func (c *Client) applyAuth(req *http.Request) {
 		req.Header.Set("Authorization", "Bearer "+c.auth.BearerToken)
 	} else if c.auth.Username != "" || c.auth.Password != "" {
 		req.SetBasicAuth(c.auth.Username, c.auth.Password)
+	}
+	for k, v := range c.auth.Header {
+		req.Header.Set(k, v)
 	}
 }
 

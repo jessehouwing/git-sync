@@ -1352,12 +1352,12 @@ func (s *syncSession) syncLFS(ctx context.Context, store storer.EncodedObjectSto
 		return nil
 	}
 
-	sourceEndpoint, err := lfsapi.EndpointFromRepoURL(s.cfg.Source.URL)
+	sourceEndpoint, sourceAuth, err := s.resolveLFSEndpoint(ctx, s.cfg.Source, "download")
 	if err != nil {
 		slog.Warn("lfs: cannot derive source LFS endpoint", "err", err)
 		return nil
 	}
-	targetEndpoint, err := lfsapi.EndpointFromRepoURL(s.cfg.Target.URL)
+	targetEndpoint, targetAuth, err := s.resolveLFSEndpoint(ctx, s.cfg.Target, "upload")
 	if err != nil {
 		slog.Warn("lfs: cannot derive target LFS endpoint", "err", err)
 		return nil
@@ -1369,17 +1369,6 @@ func (s *syncSession) syncLFS(ctx context.Context, store storer.EncodedObjectSto
 	}
 	if len(pointers) == 0 {
 		return nil
-	}
-
-	sourceAuth := lfsapi.Auth{
-		Username:    s.cfg.Source.Username,
-		Password:    s.cfg.Source.Token,
-		BearerToken: s.cfg.Source.BearerToken,
-	}
-	targetAuth := lfsapi.Auth{
-		Username:    s.cfg.Target.Username,
-		Password:    s.cfg.Target.Token,
-		BearerToken: s.cfg.Target.BearerToken,
 	}
 
 	httpClient := s.cfg.HTTPClient
@@ -1406,4 +1395,29 @@ func (s *syncSession) syncLFS(ctx context.Context, store storer.EncodedObjectSto
 		Errored:          stats.Errored,
 		BytesTransferred: stats.BytesTransferred,
 	}
+}
+
+// resolveLFSEndpoint resolves the LFS API endpoint and authentication
+// for the given endpoint configuration. For SSH URLs, it uses
+// git-lfs-authenticate to obtain the endpoint and credentials. For HTTP(S)
+// URLs, it derives the endpoint directly and uses the configured auth.
+func (s *syncSession) resolveLFSEndpoint(ctx context.Context, ep Endpoint, operation string) (string, lfsapi.Auth, error) {
+	if lfsapi.IsSSHURL(ep.URL) {
+		sshEp, err := lfsapi.SSHAuthenticate(ctx, ep.URL, operation)
+		if err != nil {
+			return "", lfsapi.Auth{}, err
+		}
+		return sshEp.Href, sshEp.Auth(), nil
+	}
+
+	endpoint, err := lfsapi.EndpointFromRepoURL(ep.URL)
+	if err != nil {
+		return "", lfsapi.Auth{}, err
+	}
+	auth := lfsapi.Auth{
+		Username:    ep.Username,
+		Password:    ep.Token,
+		BearerToken: ep.BearerToken,
+	}
+	return endpoint, auth, nil
 }
