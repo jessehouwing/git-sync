@@ -1371,18 +1371,33 @@ func (s *syncSession) syncLFS(ctx context.Context, store storer.EncodedObjectSto
 		return nil
 	}
 
-	httpClient := s.cfg.HTTPClient
-	if httpClient == nil {
-		httpClient = http.DefaultClient
+	// Create HTTP clients with appropriate TLS settings for source and target.
+	// If a custom HTTPClient was provided in config, use it as the base,
+	// otherwise create new clients with TLS settings from the endpoint config.
+	var sourceHTTPClient, targetHTTPClient *http.Client
+	if s.cfg.HTTPClient != nil {
+		// Use the provided client as-is for both source and target.
+		// This maintains backward compatibility when a custom client is provided.
+		sourceHTTPClient = s.cfg.HTTPClient
+		targetHTTPClient = s.cfg.HTTPClient
+	} else {
+		// Create clients with TLS settings from endpoint configuration.
+		sourceHTTPClient = &http.Client{
+			Transport: gitproto.NewHTTPTransport(s.cfg.Source.SkipTLSVerify),
+		}
+		targetHTTPClient = &http.Client{
+			Transport: gitproto.NewHTTPTransport(s.cfg.Target.SkipTLSVerify),
+		}
 	}
 
 	stats, err := lfs.Sync(ctx, pointers, lfs.SyncOptions{
-		SourceEndpoint: sourceEndpoint,
-		TargetEndpoint: targetEndpoint,
-		SourceAuth:     sourceAuth,
-		TargetAuth:     targetAuth,
-		HTTPClient:     httpClient,
-		Concurrency:    s.cfg.LFSConcurrency,
+		SourceEndpoint:   sourceEndpoint,
+		TargetEndpoint:   targetEndpoint,
+		SourceAuth:       sourceAuth,
+		TargetAuth:       targetAuth,
+		SourceHTTPClient: sourceHTTPClient,
+		TargetHTTPClient: targetHTTPClient,
+		Concurrency:      s.cfg.LFSConcurrency,
 	})
 	if err != nil {
 		slog.Warn("lfs: sync failed", "err", err)

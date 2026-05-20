@@ -49,9 +49,9 @@ func TestSync_AllSkipped(t *testing.T) {
 	}
 
 	stats, err := Sync(context.Background(), pointers, SyncOptions{
-		SourceEndpoint: "http://unused",
-		TargetEndpoint: targetServer.URL,
-		HTTPClient:     targetServer.Client(),
+		SourceEndpoint:   "http://unused",
+		TargetEndpoint:   targetServer.URL,
+		TargetHTTPClient: targetServer.Client(),
 	})
 	require.NoError(t, err)
 	assert.Equal(t, 1, stats.Objects)
@@ -126,10 +126,11 @@ func TestSync_TransferOneObject(t *testing.T) {
 	pointers := []Pointer{{OID: oid, Size: size}}
 
 	stats, err := Sync(context.Background(), pointers, SyncOptions{
-		SourceEndpoint: sourceServer.URL,
-		TargetEndpoint: targetServer.URL,
-		HTTPClient:     http.DefaultClient,
-		Concurrency:    2,
+		SourceEndpoint:   sourceServer.URL,
+		TargetEndpoint:   targetServer.URL,
+		SourceHTTPClient: http.DefaultClient,
+		TargetHTTPClient: http.DefaultClient,
+		Concurrency:      2,
 	})
 	require.NoError(t, err)
 	assert.Equal(t, 1, stats.Objects)
@@ -165,9 +166,9 @@ func TestSync_DeduplicatesPointers(t *testing.T) {
 	}
 
 	stats, err := Sync(context.Background(), pointers, SyncOptions{
-		SourceEndpoint: "http://unused",
-		TargetEndpoint: server.URL,
-		HTTPClient:     server.Client(),
+		SourceEndpoint:   "http://unused",
+		TargetEndpoint:   server.URL,
+		TargetHTTPClient: server.Client(),
 	})
 	require.NoError(t, err)
 	assert.Equal(t, 2, stats.Objects) // Deduplicated from 3 to 2.

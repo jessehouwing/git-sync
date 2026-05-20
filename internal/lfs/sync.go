@@ -22,8 +22,12 @@ type SyncOptions struct {
 	SourceAuth lfsapi.Auth
 	// TargetAuth is the authentication for the target LFS server.
 	TargetAuth lfsapi.Auth
-	// HTTPClient is the HTTP client used for all LFS transfers.
-	HTTPClient *http.Client
+	// SourceHTTPClient is the HTTP client used for source LFS operations.
+	// Falls back to TargetHTTPClient or http.DefaultClient if nil.
+	SourceHTTPClient *http.Client
+	// TargetHTTPClient is the HTTP client used for target LFS operations.
+	// Falls back to SourceHTTPClient or http.DefaultClient if nil.
+	TargetHTTPClient *http.Client
 	// Concurrency is the number of parallel object transfers (default: 4).
 	Concurrency int
 }
@@ -55,13 +59,24 @@ func Sync(ctx context.Context, pointers []Pointer, opts SyncOptions) (SyncStats,
 		concurrency = 4
 	}
 
-	httpClient := opts.HTTPClient
-	if httpClient == nil {
-		httpClient = http.DefaultClient
+	sourceHTTPClient := opts.SourceHTTPClient
+	if sourceHTTPClient == nil {
+		sourceHTTPClient = opts.TargetHTTPClient
+	}
+	if sourceHTTPClient == nil {
+		sourceHTTPClient = http.DefaultClient
 	}
 
-	sourceClient := lfsapi.NewClient(httpClient, opts.SourceEndpoint, opts.SourceAuth)
-	targetClient := lfsapi.NewClient(httpClient, opts.TargetEndpoint, opts.TargetAuth)
+	targetHTTPClient := opts.TargetHTTPClient
+	if targetHTTPClient == nil {
+		targetHTTPClient = opts.SourceHTTPClient
+	}
+	if targetHTTPClient == nil {
+		targetHTTPClient = http.DefaultClient
+	}
+
+	sourceClient := lfsapi.NewClient(sourceHTTPClient, opts.SourceEndpoint, opts.SourceAuth)
+	targetClient := lfsapi.NewClient(targetHTTPClient, opts.TargetEndpoint, opts.TargetAuth)
 
 	pointers = DeduplicatePointers(pointers)
 	stats := SyncStats{Objects: len(pointers)}
@@ -169,7 +184,7 @@ func Sync(ctx context.Context, pointers []Pointer, opts SyncOptions) (SyncStats,
 			defer wg.Done()
 			defer func() { <-sem }()
 
-			err := streamObject(ctx, httpClient, j.oid, j.size, j.download, j.upload, j.verify)
+			err := streamObject(ctx, sourceHTTPClient, targetHTTPClient, j.oid, j.size, j.download, j.upload, j.verify)
 			if err != nil {
 				slog.Warn("lfs sync: transfer failed", "oid", j.oid, "err", err)
 				errored.Add(1)
@@ -189,7 +204,7 @@ func Sync(ctx context.Context, pointers []Pointer, opts SyncOptions) (SyncStats,
 
 // streamObject downloads from source and uploads to target using io.Pipe
 // for streaming without buffering the entire object in memory.
-func streamObject(ctx context.Context, httpClient *http.Client, oid string, size int64, download, upload, verify *lfsapi.Link) error {
+func streamObject(ctx context.Context, sourceHTTPClient, targetHTTPClient *http.Client, oid string, size int64, download, upload, verify *lfsapi.Link) error {
 	pr, pw := io.Pipe()
 
 	var downloadErr error
@@ -197,11 +212,11 @@ func streamObject(ctx context.Context, httpClient *http.Client, oid string, size
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		downloadErr = Download(ctx, httpClient, download.Href, download.Header, pw, oid, size)
+		downloadErr = Download(ctx, sourceHTTPClient, download.Href, download.Header, pw, oid, size)
 		pw.CloseWithError(downloadErr)
 	}()
 
-	uploadErr := Upload(ctx, httpClient, upload.Href, upload.Header, pr, size)
+	uploadErr := Upload(ctx, targetHTTPClient, upload.Href, upload.Header, pr, size)
 	// If upload fails, close the pipe to unblock download goroutine.
 	if uploadErr != nil {
 		pr.CloseWithError(uploadErr)
@@ -217,7 +232,7 @@ func streamObject(ctx context.Context, httpClient *http.Client, oid string, size
 
 	// Optional verify step.
 	if verify != nil {
-		if err := Verify(ctx, httpClient, verify.Href, verify.Header, oid, size); err != nil {
+		if err := Verify(ctx, targetHTTPClient, verify.Href, verify.Header, oid, size); err != nil {
 			return fmt.Errorf("verify: %w", err)
 		}
 	}
