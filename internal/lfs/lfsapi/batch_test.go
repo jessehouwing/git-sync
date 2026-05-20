@@ -43,7 +43,10 @@ func TestBatchDownload(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", MediaType)
-		_ = json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}))
 	defer server.Close()
 
@@ -82,7 +85,10 @@ func TestBatchUpload(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", MediaType)
-		_ = json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}))
 	defer server.Close()
 
@@ -102,7 +108,10 @@ func TestBatchAuth(t *testing.T) {
 			assert.Equal(t, "Bearer mytoken", r.Header.Get("Authorization"))
 			resp := BatchResponse{Objects: []ObjectResponse{}}
 			w.Header().Set("Content-Type", MediaType)
-			_ = json.NewEncoder(w).Encode(resp)
+			if err := json.NewEncoder(w).Encode(resp); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
 		}))
 		defer server.Close()
 
@@ -119,7 +128,10 @@ func TestBatchAuth(t *testing.T) {
 			assert.Equal(t, "pass", pass)
 			resp := BatchResponse{Objects: []ObjectResponse{}}
 			w.Header().Set("Content-Type", MediaType)
-			_ = json.NewEncoder(w).Encode(resp)
+			if err := json.NewEncoder(w).Encode(resp); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
 		}))
 		defer server.Close()
 
@@ -132,7 +144,9 @@ func TestBatchAuth(t *testing.T) {
 func TestBatchHTTPError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
-		_, _ = w.Write([]byte(`{"message":"access denied"}`))
+		if _, err := w.Write([]byte(`{"message":"access denied"}`)); err != nil {
+			return
+		}
 	}))
 	defer server.Close()
 

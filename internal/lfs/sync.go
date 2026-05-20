@@ -198,6 +198,11 @@ func Sync(ctx context.Context, pointers []Pointer, opts SyncOptions) (SyncStats,
 	stats.Transferred = int(transferred.Load())
 	stats.BytesTransferred = bytesTotal.Load()
 	stats.Errored = preflightErrors + int(errored.Load())
+
+	if err := ctx.Err(); err != nil {
+		return stats, fmt.Errorf("lfs sync: %w", err)
+	}
+
 	return stats, nil
 }
 
