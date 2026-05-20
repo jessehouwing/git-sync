@@ -150,11 +150,11 @@ func Sync(ctx context.Context, pointers []Pointer, opts SyncOptions) (SyncStats,
 
 	// Execute transfers with bounded concurrency.
 	var (
-		wg              sync.WaitGroup
-		transferred     atomic.Int64
-		bytesTotal      atomic.Int64
-		errored         atomic.Int64
-		sem             = make(chan struct{}, concurrency)
+		wg          sync.WaitGroup
+		transferred atomic.Int64
+		bytesTotal  atomic.Int64
+		errored     atomic.Int64
+		sem         = make(chan struct{}, concurrency)
 	)
 
 	for _, job := range jobs {
