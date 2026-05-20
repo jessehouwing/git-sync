@@ -164,7 +164,7 @@ func Sync(ctx context.Context, pointers []Pointer, opts SyncOptions) (SyncStats,
 	for _, job := range jobs {
 		select {
 		case <-ctx.Done():
-			// Stop launching new jobs if context is cancelled
+			// Stop launching new jobs if context is done
 			goto done
 		case sem <- struct{}{}:
 		}
