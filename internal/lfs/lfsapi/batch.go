@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -128,10 +129,25 @@ func (c *Client) handleErrorResponse(resp *http.Response) error {
 
 // EndpointFromRepoURL derives the LFS API endpoint URL from a git remote URL.
 // It handles both URLs ending in .git and those without.
-func EndpointFromRepoURL(repoURL string) string {
+// Returns an error for non-HTTP(S) URLs (e.g., ssh://, git://) since LFS
+// over those protocols requires a different auth flow.
+func EndpointFromRepoURL(repoURL string) (string, error) {
+	parsed, err := url.Parse(repoURL)
+	if err != nil {
+		return "", fmt.Errorf("lfs endpoint: invalid URL %q: %w", repoURL, err)
+	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "http", "https":
+		// OK
+	case "":
+		return "", fmt.Errorf("lfs endpoint: missing URL scheme in %q", repoURL)
+	default:
+		return "", fmt.Errorf("lfs endpoint: unsupported scheme %q in %q; LFS requires HTTP(S)", parsed.Scheme, repoURL)
+	}
+
 	u := strings.TrimSuffix(repoURL, "/")
 	if !strings.HasSuffix(u, ".git") {
 		u += ".git"
 	}
-	return u + "/info/lfs"
+	return u + "/info/lfs", nil
 }

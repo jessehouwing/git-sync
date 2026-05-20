@@ -141,18 +141,29 @@ func TestBatchHTTPError(t *testing.T) {
 
 func TestEndpointFromRepoURL(t *testing.T) {
 	tests := []struct {
-		input string
-		want  string
+		input   string
+		want    string
+		wantErr bool
 	}{
-		{"https://github.com/user/repo.git", "https://github.com/user/repo.git/info/lfs"},
-		{"https://github.com/user/repo", "https://github.com/user/repo.git/info/lfs"},
-		{"https://github.com/user/repo.git/", "https://github.com/user/repo.git/info/lfs"},
-		{"https://example.com/project/", "https://example.com/project.git/info/lfs"},
+		{"https://github.com/user/repo.git", "https://github.com/user/repo.git/info/lfs", false},
+		{"https://github.com/user/repo", "https://github.com/user/repo.git/info/lfs", false},
+		{"https://github.com/user/repo.git/", "https://github.com/user/repo.git/info/lfs", false},
+		{"https://example.com/project/", "https://example.com/project.git/info/lfs", false},
+		{"http://example.com/repo", "http://example.com/repo.git/info/lfs", false},
+		{"ssh://git@github.com/user/repo.git", "", true},
+		{"git://github.com/user/repo.git", "", true},
+		{"git+ssh://git@host/repo", "", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			got := EndpointFromRepoURL(tt.input)
-			assert.Equal(t, tt.want, got)
+			got, err := EndpointFromRepoURL(tt.input)
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "unsupported scheme")
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, tt.want, got)
+			}
 		})
 	}
 }

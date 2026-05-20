@@ -160,7 +160,7 @@ type Result struct {
 	Stats              Stats                  `json:"stats"`
 	Measurement        Measurement            `json:"measurement"`
 	Protocol           string                 `json:"protocol"`
-	LFS                LFSStats               `json:"lfs,omitempty"`
+	LFS                *LFSStats              `json:"lfs,omitempty"`
 }
 
 // LFSStats holds the outcome of LFS object transfers during a sync.
@@ -196,7 +196,7 @@ func (r Result) Lines() []string {
 	if r.SourceHEAD != "" {
 		lines = append(lines, "source-head: "+r.SourceHEAD.String())
 	}
-	if r.LFS.Objects > 0 {
+	if r.LFS != nil && r.LFS.Objects > 0 {
 		lines = append(lines, fmt.Sprintf("lfs: objects=%d transferred=%d skipped=%d errored=%d bytes=%d",
 			r.LFS.Objects, r.LFS.Transferred, r.LFS.Skipped, r.LFS.Errored, r.LFS.BytesTransferred))
 	}
@@ -902,6 +902,17 @@ func (s *syncSession) runSync(ctx context.Context) (Result, error) {
 				return result, err
 			}
 		}
+
+		// LFS post-push phase: scan fetched objects for LFS pointers and
+		// transfer any missing LFS objects from source to target.
+		if s.cfg.LFS && closureFetched {
+			result.LFS = s.syncLFS(ctx, repo.Storer)
+		} else if s.cfg.LFS && !closureFetched {
+			// For relay mode, fetch objects on demand for LFS scanning.
+			if err := fetchClosure(); err == nil {
+				result.LFS = s.syncLFS(ctx, repo.Storer)
+			}
+		}
 	}
 
 	s.finalizeCounts(pushPlans, &result)
@@ -999,6 +1010,18 @@ func (s *syncSession) runReplicate(ctx context.Context) (Result, error) {
 		result.Relay = repResult.Relay
 		result.RelayMode = repResult.RelayMode
 		result.RelayReason = repResult.RelayReason
+
+		// LFS post-push phase for replicate mode.
+		if s.cfg.LFS {
+			repo, repoErr := git.Init(memory.NewStorage(), nil)
+			if repoErr == nil {
+				gpDesired := convert.DesiredRefs(desiredRefs)
+				fetchErr := s.sourceService.FetchToStore(ctx, repo.Storer, s.sourceConn, gpDesired, s.target.refMap)
+				if fetchErr == nil || errors.Is(fetchErr, git.NoErrAlreadyUpToDate) {
+					result.LFS = s.syncLFS(ctx, repo.Storer)
+				}
+			}
+		}
 	}
 
 	s.finalizeCounts(pushPlans, &result)
@@ -1323,23 +1346,30 @@ func countObjects(store storer.EncodedObjectStorer) (int, error) {
 
 // syncLFS scans the given object store for LFS pointers and transfers
 // any missing LFS objects from source to target. It returns LFS transfer
-// stats. If LFS is not enabled in config, it returns zero stats.
-func (s *syncSession) syncLFS(ctx context.Context, store storer.EncodedObjectStorer) LFSStats {
+// stats. If LFS is not enabled in config, it returns nil.
+func (s *syncSession) syncLFS(ctx context.Context, store storer.EncodedObjectStorer) *LFSStats {
 	if !s.cfg.LFS {
-		return LFSStats{}
+		return nil
+	}
+
+	sourceEndpoint, err := lfsapi.EndpointFromRepoURL(s.cfg.Source.URL)
+	if err != nil {
+		slog.Warn("lfs: cannot derive source LFS endpoint", "err", err)
+		return nil
+	}
+	targetEndpoint, err := lfsapi.EndpointFromRepoURL(s.cfg.Target.URL)
+	if err != nil {
+		slog.Warn("lfs: cannot derive target LFS endpoint", "err", err)
+		return nil
 	}
 
 	pointers, err := lfs.ScanStore(store)
 	if err != nil {
-		slog.Warn("lfs: scan for pointer files failed", "err", err)
-		return LFSStats{}
+		slog.Warn("lfs: scan for pointer files had errors (proceeding with partial results)", "err", err)
 	}
 	if len(pointers) == 0 {
-		return LFSStats{}
+		return nil
 	}
-
-	sourceEndpoint := lfsapi.EndpointFromRepoURL(s.cfg.Source.URL)
-	targetEndpoint := lfsapi.EndpointFromRepoURL(s.cfg.Target.URL)
 
 	sourceAuth := lfsapi.Auth{
 		Username:    s.cfg.Source.Username,
@@ -1369,7 +1399,7 @@ func (s *syncSession) syncLFS(ctx context.Context, store storer.EncodedObjectSto
 		slog.Warn("lfs: sync failed", "err", err)
 	}
 
-	return LFSStats{
+	return &LFSStats{
 		Objects:          stats.Objects,
 		Transferred:      stats.Transferred,
 		Skipped:          stats.Skipped,

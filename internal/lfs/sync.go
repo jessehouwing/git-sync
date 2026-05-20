@@ -114,17 +114,26 @@ func Sync(ctx context.Context, pointers []Pointer, opts SyncOptions) (SyncStats,
 	}
 
 	var jobs []transferJob
+	var preflightErrors int
 	for i := range uploadResp {
 		obj := &uploadResp[i]
+		// Handle per-object errors from the batch response.
+		if obj.Error != nil {
+			slog.Warn("lfs sync: target batch error for object", "oid", obj.OID, "code", obj.Error.Code, "message", obj.Error.Message)
+			preflightErrors++
+			continue
+		}
 		if obj.Actions == nil || obj.Actions.Upload == nil {
-			// Target already has this object (no upload action).
-			stats.Skipped++
+			// Target confirmed it already has this object (no upload action
+			// in second batch call). This is an edge case where the target
+			// accepted the object between our first check and the upload
+			// batch. Not counted as an error.
 			continue
 		}
 		dl, ok := downloadLinks[obj.OID]
 		if !ok {
 			slog.Warn("lfs sync: no download link for object", "oid", obj.OID)
-			stats.Errored++
+			preflightErrors++
 			continue
 		}
 		job := transferJob{
@@ -174,7 +183,7 @@ func Sync(ctx context.Context, pointers []Pointer, opts SyncOptions) (SyncStats,
 
 	stats.Transferred = int(transferred.Load())
 	stats.BytesTransferred = bytesTotal.Load()
-	stats.Errored = int(errored.Load())
+	stats.Errored = preflightErrors + int(errored.Load())
 	return stats, nil
 }
 

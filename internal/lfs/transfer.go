@@ -1,9 +1,11 @@
 package lfs
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -86,12 +88,22 @@ func Upload(ctx context.Context, httpClient *http.Client, href string, headers m
 
 // Verify confirms an uploaded object with the LFS server (optional step).
 func Verify(ctx context.Context, httpClient *http.Client, href string, headers map[string]string, oid string, size int64) error {
-	payload := fmt.Sprintf(`{"oid":"%s","size":%d}`, oid, size)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, href, strings.NewReader(payload))
+	payload := struct {
+		OID  string `json:"oid"`
+		Size int64  `json:"size"`
+	}{OID: oid, Size: size}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("lfs verify: marshal payload: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, href, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("lfs verify: create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/vnd.git-lfs+json")
+	req.Header.Set("Accept", "application/vnd.git-lfs+json")
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}

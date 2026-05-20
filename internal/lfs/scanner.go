@@ -1,6 +1,9 @@
 package lfs
 
 import (
+	"fmt"
+	"log/slog"
+
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/storer"
 )
@@ -8,6 +11,8 @@ import (
 // ScanStore scans all blobs in the given object store and returns any
 // that are valid LFS pointer files. This is used after fetching objects
 // into a memory store to find LFS objects that need to be transferred.
+// Blob read errors are logged and counted; if any occur, an error is
+// returned alongside any pointers found so callers can surface a warning.
 func ScanStore(store storer.EncodedObjectStorer) ([]Pointer, error) {
 	iter, err := store.IterEncodedObjects(plumbing.BlobObject)
 	if err != nil {
@@ -16,12 +21,15 @@ func ScanStore(store storer.EncodedObjectStorer) ([]Pointer, error) {
 	defer iter.Close()
 
 	var pointers []Pointer
+	var readErrors int
 	err = iter.ForEach(func(obj plumbing.EncodedObject) error {
 		if obj.Size() > MaxPointerSize {
 			return nil
 		}
 		reader, err := obj.Reader()
 		if err != nil {
+			readErrors++
+			slog.Warn("lfs scanner: failed to read blob", "hash", obj.Hash().String(), "err", err)
 			return nil
 		}
 		defer reader.Close()
@@ -36,6 +44,9 @@ func ScanStore(store storer.EncodedObjectStorer) ([]Pointer, error) {
 	})
 	if err != nil {
 		return nil, err
+	}
+	if readErrors > 0 {
+		return pointers, fmt.Errorf("lfs scanner: %d blob(s) could not be read (scan may be incomplete)", readErrors)
 	}
 	return pointers, nil
 }

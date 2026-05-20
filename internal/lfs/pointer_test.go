@@ -36,6 +36,37 @@ func TestParsePointer(t *testing.T) {
 			},
 		},
 		{
+			name: "pointer with extension lines",
+			input: "version https://git-lfs.github.com/spec/v1\n" +
+				"ext-0-foo sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n" +
+				"oid sha256:4d7a214614ab2935c943f9e0ff69d22eadbb8f32b1258daaa5e2ca24d17e2393\n" +
+				"size 12345\n",
+			want: Pointer{
+				OID:  "4d7a214614ab2935c943f9e0ff69d22eadbb8f32b1258daaa5e2ca24d17e2393",
+				Size: 12345,
+			},
+		},
+		{
+			name: "pointer with oid and size in reversed order",
+			input: "version https://git-lfs.github.com/spec/v1\n" +
+				"size 999\n" +
+				"oid sha256:4d7a214614ab2935c943f9e0ff69d22eadbb8f32b1258daaa5e2ca24d17e2393\n",
+			want: Pointer{
+				OID:  "4d7a214614ab2935c943f9e0ff69d22eadbb8f32b1258daaa5e2ca24d17e2393",
+				Size: 999,
+			},
+		},
+		{
+			name: "uppercase oid is normalized to lowercase",
+			input: "version https://git-lfs.github.com/spec/v1\n" +
+				"oid sha256:4D7A214614AB2935C943F9E0FF69D22EADBB8F32B1258DAAA5E2CA24D17E2393\n" +
+				"size 100\n",
+			want: Pointer{
+				OID:  "4d7a214614ab2935c943f9e0ff69d22eadbb8f32b1258daaa5e2ca24d17e2393",
+				Size: 100,
+			},
+		},
+		{
 			name:    "empty input",
 			input:   "",
 			wantErr: true,
@@ -55,6 +86,13 @@ func TestParsePointer(t *testing.T) {
 			name: "short hash",
 			input: "version https://git-lfs.github.com/spec/v1\n" +
 				"oid sha256:abc123\n" +
+				"size 123\n",
+			wantErr: true,
+		},
+		{
+			name: "non-hex characters in oid",
+			input: "version https://git-lfs.github.com/spec/v1\n" +
+				"oid sha256:zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz\n" +
 				"size 123\n",
 			wantErr: true,
 		},
