@@ -43,11 +43,11 @@ type BatchResponse struct {
 // ObjectResponse describes the server's response for a single object
 // in a batch request.
 type ObjectResponse struct {
-	OID           string          `json:"oid"`
-	Size          int64           `json:"size"`
+	OID           string         `json:"oid"`
+	Size          int64          `json:"size"`
 	Authenticated bool           `json:"authenticated,omitempty"`
-	Actions       *ObjectActions  `json:"actions,omitempty"`
-	Error         *ObjectError    `json:"error,omitempty"`
+	Actions       *ObjectActions `json:"actions,omitempty"`
+	Error         *ObjectError   `json:"error,omitempty"`
 }
 
 // ObjectActions contains download/upload action links for an object.
