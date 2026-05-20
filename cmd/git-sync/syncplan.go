@@ -142,6 +142,8 @@ func newSyncLikeCmd(name, short string, dryRun bool, defaultMode gitsync.Operati
 	cmd.Flags().Int64Var(&req.Options.MaxPackBytes, "max-pack-bytes", 0, "abort bootstrap-relay push if the streamed source pack exceeds this many bytes")
 	cmd.Flags().Int64Var(&req.Options.TargetMaxPackBytes, "target-max-pack-bytes", 0, "target receive-pack body size limit; batches are planned and auto-subdivided to fit")
 	cmd.Flags().StringVar(&req.Options.BootstrapStrategy, "bootstrap-strategy", "", "checkpoint chain ordering for bootstrap: \"first-parent\" (default) or \"topo\". Use \"topo\" for merge-heavy repos where individual first-parent steps drag in unboundedly large side branches; requires the target to allow non-fast-forward updates on the refs/gitsync/ namespace")
+	cmd.Flags().BoolVar(&req.Options.LFS, "lfs", false, "mirror Git LFS objects from source to target alongside the pack transfer")
+	cmd.Flags().IntVar(&req.Options.LFSConcurrency, "lfs-concurrency", 0, "number of parallel LFS object transfers (default 4)")
 	addProtocolFlag(cmd, &protocolVal)
 	cmd.Flags().BoolVarP(&req.Options.Verbose, "verbose", "v", false, "verbose logging")
 

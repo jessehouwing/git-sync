@@ -43,6 +43,11 @@ type AdvancedOptions struct {
 	TargetMaxPackBytes     int64  `json:"targetMaxPackBytes"`
 	MaterializedMaxObjects int    `json:"materializedMaxObjects"`
 	BootstrapStrategy      string `json:"bootstrapStrategy,omitempty"`
+	// LFS enables Git LFS object mirroring alongside the git pack transfer.
+	LFS bool `json:"lfs,omitempty"`
+	// LFSConcurrency controls the number of parallel LFS object transfers.
+	// Zero uses the default (4).
+	LFSConcurrency int `json:"lfsConcurrency,omitempty"`
 }
 
 // BootstrapStrategy values accepted by AdvancedOptions.BootstrapStrategy.
@@ -283,6 +288,8 @@ func (c *Client) buildSyncConfig(ctx context.Context, req SyncRequest) (syncer.C
 		ProtocolMode:           protocolString(req.Policy.Protocol),
 		Verbose:                req.Options.Verbose,
 		BootstrapStrategy:      req.Options.BootstrapStrategy,
+		LFS:                    req.Options.LFS,
+		LFSConcurrency:         req.Options.LFSConcurrency,
 	}, nil
 }
 
@@ -313,6 +320,8 @@ func (c *Client) buildBootstrapConfig(ctx context.Context, req BootstrapRequest)
 		ProtocolMode:       protocolString(req.Protocol),
 		Verbose:            req.Options.Verbose,
 		BootstrapStrategy:  req.Options.BootstrapStrategy,
+		LFS:                req.Options.LFS,
+		LFSConcurrency:     req.Options.LFSConcurrency,
 	}, nil
 }
 
