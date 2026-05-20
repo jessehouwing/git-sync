@@ -120,7 +120,10 @@ func (c *Client) applyAuth(req *http.Request) {
 
 func (c *Client) handleErrorResponse(resp *http.Response) error {
 	limited := io.LimitReader(resp.Body, 64*1024)
-	body, _ := io.ReadAll(limited)
+	body, err := io.ReadAll(limited)
+	if err != nil {
+		return fmt.Errorf("lfs batch: read error response: %w", err)
+	}
 
 	var errResp struct {
 		Message string `json:"message"`

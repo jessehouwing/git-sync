@@ -1354,18 +1354,21 @@ func (s *syncSession) syncLFS(ctx context.Context, store storer.EncodedObjectSto
 
 	sourceEndpoint, sourceAuth, err := s.resolveLFSEndpoint(ctx, s.cfg.Source, "download")
 	if err != nil {
-		slog.Warn("lfs: cannot derive source LFS endpoint", "err", err)
+		slog.Warn("lfs: cannot derive source LFS endpoint",
+			slog.Any("err", err))
 		return nil
 	}
 	targetEndpoint, targetAuth, err := s.resolveLFSEndpoint(ctx, s.cfg.Target, "upload")
 	if err != nil {
-		slog.Warn("lfs: cannot derive target LFS endpoint", "err", err)
+		slog.Warn("lfs: cannot derive target LFS endpoint",
+			slog.Any("err", err))
 		return nil
 	}
 
 	pointers, err := lfs.ScanStore(store)
 	if err != nil {
-		slog.Warn("lfs: scan for pointer files had errors (proceeding with partial results)", "err", err)
+		slog.Warn("lfs: scan for pointer files had errors (proceeding with partial results)",
+			slog.Any("err", err))
 	}
 	if len(pointers) == 0 {
 		return nil
@@ -1400,7 +1403,8 @@ func (s *syncSession) syncLFS(ctx context.Context, store storer.EncodedObjectSto
 		Concurrency:      s.cfg.LFSConcurrency,
 	})
 	if err != nil {
-		slog.Warn("lfs: sync failed", "err", err)
+		slog.Warn("lfs: sync failed",
+			slog.Any("err", err))
 	}
 
 	return &LFSStats{
@@ -1420,14 +1424,14 @@ func (s *syncSession) resolveLFSEndpoint(ctx context.Context, ep Endpoint, opera
 	if lfsapi.IsSSHURL(ep.URL) {
 		sshEp, err := lfsapi.SSHAuthenticate(ctx, ep.URL, operation)
 		if err != nil {
-			return "", lfsapi.Auth{}, err
+			return "", lfsapi.Auth{}, fmt.Errorf("ssh authenticate: %w", err)
 		}
 		return sshEp.Href, sshEp.Auth(), nil
 	}
 
 	endpoint, err := lfsapi.EndpointFromRepoURL(ep.URL)
 	if err != nil {
-		return "", lfsapi.Auth{}, err
+		return "", lfsapi.Auth{}, fmt.Errorf("endpoint from repo URL: %w", err)
 	}
 	auth := lfsapi.Auth{
 		Username:    ep.Username,

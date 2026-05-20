@@ -235,7 +235,8 @@ func TestSSHAuthenticateEmptyHref(t *testing.T) {
 	dir := t.TempDir()
 	script := filepath.Join(dir, "ssh-empty-href.sh")
 
-	resp, _ := json.Marshal(SSHEndpoint{Href: "", Header: map[string]string{}})
+	resp, err := json.Marshal(SSHEndpoint{Href: "", Header: map[string]string{}})
+	require.NoError(t, err)
 	shimContent := strings.Join([]string{
 		"#!/bin/sh",
 		"printf '" + string(resp) + "'",

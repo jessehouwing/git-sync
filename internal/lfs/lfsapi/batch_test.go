@@ -20,7 +20,9 @@ func TestBatchDownload(t *testing.T) {
 
 		var req BatchRequest
 		err := json.NewDecoder(r.Body).Decode(&req)
-		require.NoError(t, err)
+		if !assert.NoError(t, err) {
+			return
+		}
 		assert.Equal(t, OperationDownload, req.Operation)
 		assert.Len(t, req.Objects, 1)
 		assert.Equal(t, "abc123", req.Objects[0].OID)
@@ -41,7 +43,7 @@ func TestBatchDownload(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", MediaType)
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
@@ -61,7 +63,9 @@ func TestBatchUpload(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req BatchRequest
 		err := json.NewDecoder(r.Body).Decode(&req)
-		require.NoError(t, err)
+		if !assert.NoError(t, err) {
+			return
+		}
 		assert.Equal(t, OperationUpload, req.Operation)
 
 		resp := BatchResponse{
@@ -78,7 +82,7 @@ func TestBatchUpload(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", MediaType)
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
@@ -98,7 +102,7 @@ func TestBatchAuth(t *testing.T) {
 			assert.Equal(t, "Bearer mytoken", r.Header.Get("Authorization"))
 			resp := BatchResponse{Objects: []ObjectResponse{}}
 			w.Header().Set("Content-Type", MediaType)
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 		}))
 		defer server.Close()
 
@@ -115,7 +119,7 @@ func TestBatchAuth(t *testing.T) {
 			assert.Equal(t, "pass", pass)
 			resp := BatchResponse{Objects: []ObjectResponse{}}
 			w.Header().Set("Content-Type", MediaType)
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 		}))
 		defer server.Close()
 
@@ -128,7 +132,7 @@ func TestBatchAuth(t *testing.T) {
 func TestBatchHTTPError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
-		w.Write([]byte(`{"message":"access denied"}`))
+		_, _ = w.Write([]byte(`{"message":"access denied"}`))
 	}))
 	defer server.Close()
 
