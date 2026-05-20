@@ -23,10 +23,10 @@ type SyncOptions struct {
 	// TargetAuth is the authentication for the target LFS server.
 	TargetAuth lfsapi.Auth
 	// SourceHTTPClient is the HTTP client used for source LFS operations.
-	// Falls back to TargetHTTPClient or http.DefaultClient if nil.
+	// Falls back to http.DefaultClient if nil.
 	SourceHTTPClient *http.Client
 	// TargetHTTPClient is the HTTP client used for target LFS operations.
-	// Falls back to SourceHTTPClient or http.DefaultClient if nil.
+	// Falls back to http.DefaultClient if nil.
 	TargetHTTPClient *http.Client
 	// Concurrency is the number of parallel object transfers (default: 4).
 	Concurrency int
@@ -61,16 +61,10 @@ func Sync(ctx context.Context, pointers []Pointer, opts SyncOptions) (SyncStats,
 
 	sourceHTTPClient := opts.SourceHTTPClient
 	if sourceHTTPClient == nil {
-		sourceHTTPClient = opts.TargetHTTPClient
-	}
-	if sourceHTTPClient == nil {
 		sourceHTTPClient = http.DefaultClient
 	}
 
 	targetHTTPClient := opts.TargetHTTPClient
-	if targetHTTPClient == nil {
-		targetHTTPClient = opts.SourceHTTPClient
-	}
 	if targetHTTPClient == nil {
 		targetHTTPClient = http.DefaultClient
 	}
