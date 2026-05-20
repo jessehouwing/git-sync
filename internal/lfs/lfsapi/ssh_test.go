@@ -236,7 +236,9 @@ func TestSSHAuthenticateEmptyHref(t *testing.T) {
 	script := filepath.Join(dir, "ssh-empty-href.sh")
 
 	resp, err := json.Marshal(SSHEndpoint{Href: "", Header: map[string]string{}})
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("marshal response: %v", err)
+	}
 	shimContent := strings.Join([]string{
 		"#!/bin/sh",
 		"printf '" + string(resp) + "'",
@@ -249,7 +251,7 @@ func TestSSHAuthenticateEmptyHref(t *testing.T) {
 	t.Cleanup(func() { SSHLookPath = orig })
 	SSHLookPath = func(string) (string, error) { return script, nil }
 
-	_, err := SSHAuthenticate(context.Background(), "ssh://git@github.com/user/repo.git", "download")
+	_, err = SSHAuthenticate(context.Background(), "ssh://git@github.com/user/repo.git", "download")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "empty href")
 }
